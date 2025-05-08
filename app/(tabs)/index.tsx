@@ -15,7 +15,14 @@ import { challengesService } from '@/services/challengesService';
 import { placesService } from '@/services/placesService';
 import { userService } from '@/services/userService';
 import { User, Place, Challenge, FeedPost } from '@/types';
-import { getCurrentLocation, searchNearbyPlaces, getPlacePhoto, NearbyPlace } from '@/lib/googleMapsService';
+import { locationChallengeService } from '@/services/locationChallengeService';
+import { 
+  getCurrentLocation,
+  searchNearbyPlaces, 
+  getPlacePhoto,
+  NearbyPlace, 
+  createPlaceFromGoogleData
+} from '@/lib/googleMapsService';
 
 export default function HomeScreen() {
   const [loading, setLoading] = useState<boolean>(true);
@@ -29,6 +36,7 @@ export default function HomeScreen() {
   const [feedPosts, setFeedPosts] = useState<FeedPost[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [mockChallengeUsed, setMockChallengeUsed] = useState<boolean>(false);
 
   // Kullanıcının konumunu al
   const getUserLocation = async () => {
@@ -50,19 +58,58 @@ export default function HomeScreen() {
     try {
       setLoadingNearby(true);
       
-      const nearbyResults = await searchNearbyPlaces(
-        userLocation,
-        1500, // Yarıçap (metre)
-        'tourist_attraction', // Varsayılan olarak turistik yerler
-        'tr' // Dil
-      );
+      // Progressive search with expanding radius
+      const searchRadii = [1000, 5000, 10000, 20000, 50000]; // Meters
+      let nearbyResults = null;
+      let usedRadius = 0;
       
-      if (nearbyResults && nearbyResults.length > 0) {
+      // Try with progressively larger radius until we find something
+      for (const radius of searchRadii) {
+        console.log(`[fetchNearbyPlaces] Searching within ${radius}m radius...`);
+        nearbyResults = await searchNearbyPlaces(userLocation, radius);
+        
+        if (nearbyResults && nearbyResults.length > 0) {
+          console.log(`[fetchNearbyPlaces] Found ${nearbyResults.length} results at ${radius}m radius`);
+          usedRadius = radius;
+          break;
+        }
+      }
+      
+      if (!nearbyResults || nearbyResults.length === 0) {
+        console.log('[fetchNearbyPlaces] No results found even at largest radius.');
+        setNearbyPlaces([]); // No results found
+      } else {
+        console.log(`[fetchNearbyPlaces] Found ${nearbyResults.length} results at ${usedRadius}m.`);
         setNearbyPlaces(nearbyResults.slice(0, 5)); // Sadece ilk 5 sonucu göster
+        
+        // Yakındaki ilk yerden şehir bilgisini çıkarıp buna göre challenge getir
+        if (nearbyResults.length > 0 && nearbyResults[0].vicinity) {
+          const city = extractCityFromVicinity(nearbyResults[0].vicinity);
+          if (city) {
+            // Veritabanında kullanmak için yerleri ekle
+            const placesToAdd = nearbyResults.slice(0, 5); // İlk 5 yeri ekle
+            for (const place of placesToAdd) {
+              try {
+                // Using the outer savePlaceToDatabase function
+                await createPlaceFromGoogleData(place, city);
+              } catch (err) {
+                console.error(`Error saving place ${place.name} to database:`, err);
+              }
+            }
+            
+            // Konum bazlı görevleri getir
+            fetchLocationBasedChallenges(city);
+          }
+        }
       }
     } catch (err) {
-      console.error('Yakındaki yerler aranırken hata:', err);
-      // Hata durumunda yakındaki yerler yerine Supabase'den gelen yerler gösterilecek
+      // Log the specific error, check if it's ZERO_RESULTS
+      if (err instanceof Error && err.message.includes('ZERO_RESULTS')) {
+        console.warn('[fetchNearbyPlaces] Google Places API returned ZERO_RESULTS. Falling back to Supabase data if available.');
+      } else {
+        console.error('[fetchNearbyPlaces] Error searching nearby places:', err);
+      }
+      setNearbyPlaces([]); // Hata durumunda da boşalt
     } finally {
       setLoadingNearby(false);
     }
@@ -84,7 +131,28 @@ export default function HomeScreen() {
       setUser(userData);
       setPlaces(placesData || []);
       setChallenges(challengesData || []);
-      setDailyChallenge(dailyChallengeData);
+      
+      // Günün görevi için veri yoksa default veri kullan
+      if (dailyChallengeData) {
+        setDailyChallenge(dailyChallengeData);
+        setMockChallengeUsed(false);
+      } else {
+        console.log('No daily challenge from API, using default data');
+        // API'den veri yoksa varsayılan bir challenge oluştur
+        const defaultChallenge = {
+          id: 'default-challenge-1',
+          title: 'İstanbul Keşif Rotası',
+          description: 'İstanbul\'un en popüler 3 turistik noktasını ziyaret edin ve fotoğraf paylaşın.',
+          points: 500,
+          image_url: 'https://images.unsplash.com/photo-1524231757912-21f4fe3a7200',
+          deadline: '3 gün',
+          challenge_type: 'general' as 'general',
+          category: 'general' as 'general',
+        };
+        
+        setDailyChallenge(defaultChallenge);
+        setMockChallengeUsed(true);
+      }
       
       // FeedPost tipi uyumsuzluğunu çözmek için tip dönüşümü
       if (feedPostsData) {
@@ -111,9 +179,73 @@ export default function HomeScreen() {
     setRefreshing(false);
   }, []);
 
+  // Adres bilgisinden şehir adını çıkarmak için yardımcı fonksiyon
+  const extractCityFromVicinity = (vicinity: string): string | null => {
+    if (!vicinity) return null;
+    
+    // Turkish cities list to help with identification
+    const turkishCities = [
+      'İstanbul', 'Ankara', 'İzmir', 'Bursa', 'Adana', 'Gaziantep', 'Konya', 
+      'Antalya', 'Kayseri', 'Mersin', 'Eskişehir', 'Diyarbakır', 'Şanlıurfa',
+      'Samsun', 'Malatya', 'Gebze', 'Denizli', 'Sivas', 'Erzurum', 'Tokat',
+      'Hatay', 'Manisa', 'Batman', 'Kahramanmaraş', 'Van', 'Elazığ', 'Tekirdağ',
+      'Adapazarı', 'Kocaeli', 'İzmit'  // Adding İzmit explicitly for the current case
+    ];
+    
+    // First, check if any city name is directly in the vicinity string
+    for (const city of turkishCities) {
+      if (vicinity.includes(city)) {
+        return city;
+      }
+    }
+    
+    // Örnek: "Beyoğlu, İstanbul" -> "İstanbul"
+    // Örnek: "Taksim Meydanı, İstanbul" -> "İstanbul"
+    const parts = vicinity.split(',');
+    if (parts.length > 1) {
+      // Take the last part, which is often the city
+      const lastPart = parts[parts.length - 1].trim();
+      return lastPart;
+    }
+    
+    // If we couldn't identify a city, return the whole string or a default
+    return vicinity.trim();
+  };
+
+  // Konum bazlı görevleri getir
+  const fetchLocationBasedChallenges = async (city: string) => {
+    try {
+      console.log(`[fetchLocationBasedChallenges] Fetching challenges for ${city}`);
+      const locationChallenges = await locationChallengeService.getLocationBasedChallenges(city);
+      
+      if (locationChallenges && locationChallenges.length > 0) {
+        console.log(`[fetchLocationBasedChallenges] Found ${locationChallenges.length} challenges for ${city}`);
+        
+        // Eğer günün görevi yoksa, ilk lokasyon challenge'ını günün görevi olarak ayarla
+        if (!dailyChallenge || mockChallengeUsed) {
+          setDailyChallenge(locationChallenges[0]);
+          setMockChallengeUsed(false);
+          console.log(`[fetchLocationBasedChallenges] Set daily challenge to "${locationChallenges[0].title}"`);
+        }
+        
+        // Genel görevleri güncelle
+        setChallenges(prev => {
+          // Yeni görevleri ekleyip tekrarları önle (id'ye göre)
+          const existingIds = new Set(prev.map(c => c.id));
+          const newChallenges = locationChallenges.filter(c => !existingIds.has(c.id));
+          return [...prev, ...newChallenges];
+        });
+      } else {
+        console.log(`[fetchLocationBasedChallenges] No challenges found for ${city}, but default challenges should have been created`);
+      }
+    } catch (error) {
+      console.error(`[fetchLocationBasedChallenges] Error fetching challenges for ${city}:`, error);
+    }
+  };
+
   if (loading) {
     return (
-      <SafeAreaView style={[styles.container, styles.loadingContainer]}>
+      <SafeAreaView style={[styles.container, styles.loadingContainer]} edges={['right', 'left']}>
         <ActivityIndicator size="large" color={THEME.COLORS.primary} />
         <ThemedText style={styles.loadingText}>Veriler yükleniyor...</ThemedText>
       </SafeAreaView>
@@ -122,12 +254,15 @@ export default function HomeScreen() {
 
   if (error) {
     return (
-      <SafeAreaView style={[styles.container, styles.errorContainer]}>
+      <SafeAreaView style={[styles.container, styles.errorContainer]} edges={['right', 'left']}>
         <FontAwesome5 name="exclamation-circle" size={50} color={THEME.COLORS.error} />
         <ThemedText style={styles.errorText}>{error}</ThemedText>
         <TouchableOpacity
           style={styles.retryButton}
-          onPress={() => router.replace('/')}
+          onPress={() => {
+            setError(null);
+            loadData();
+          }}
         >
           <ThemedText style={styles.retryButtonText}>Tekrar Dene</ThemedText>
         </TouchableOpacity>
@@ -136,9 +271,8 @@ export default function HomeScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['right', 'left']}>
       <StatusBar style="auto" />
-      
       {/* Header */}
       <View style={styles.header}>
         <View>
@@ -172,13 +306,15 @@ export default function HomeScreen() {
         {dailyChallenge && (
           <ThemedView style={styles.featuredCard}>
             <Image 
-              source={{ uri: dailyChallenge.image_url || dailyChallenge.image }} 
+              source={{ uri: dailyChallenge.image_url || dailyChallenge.image || 'https://images.unsplash.com/photo-1501785888041-af3ef285b470' }} 
               style={styles.featuredImage}
-              resizeMode="cover"
+              contentFit="cover"
             />
             <View style={styles.featuredOverlay}>
               <View style={styles.featuredContent}>
-                <ThemedText style={styles.featuredTag}>Günün Görevi</ThemedText>
+                <ThemedText style={styles.featuredTag}>
+                  {mockChallengeUsed ? 'Önerilen Görev' : 'Günün Görevi'}
+                </ThemedText>
                 <ThemedText style={styles.featuredTitle}>{dailyChallenge.title}</ThemedText>
                 <ThemedText style={styles.featuredDescription}>{dailyChallenge.description}</ThemedText>
                 <View style={styles.featuredFooter}>
@@ -188,7 +324,16 @@ export default function HomeScreen() {
                     </ThemedText>
                     <ThemedText style={styles.featuredPointsText}>{dailyChallenge.points} Puan</ThemedText>
                   </View>
-                  <TouchableOpacity style={styles.featuredButton}>
+                  <TouchableOpacity 
+                    style={styles.featuredButton}
+                    onPress={() => {
+                      if (mockChallengeUsed) {
+                        Alert.alert('Katılım Başarılı', 'Bu göreve katıldınız! Tamamlandığında puanları kazanacaksınız.');
+                      } else {
+                        router.push(`/challenge/${dailyChallenge.id}`);
+                      }
+                    }}
+                  >
                     <ThemedText style={styles.featuredButtonText}>Katıl</ThemedText>
                   </TouchableOpacity>
                 </View>
@@ -369,37 +514,54 @@ export default function HomeScreen() {
               showsHorizontalScrollIndicator={false}
               data={challenges}
               keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.flatListContent}
               renderItem={({ item }) => (
                 <TouchableOpacity 
-                  style={styles.challengeCard}
-                  onPress={() => router.push('/(tabs)/challenges')}
+                  style={styles.placeCard}
+                  activeOpacity={0.8}
+                  onPress={() => router.push(`/challenge/${item.id}`)}
                 >
-                  <Image 
-                    source={{ uri: item.image_url || item.image }} 
-                    style={styles.challengeImage}
-                    resizeMode="cover"
-                  />
-                  <View style={styles.challengeInfo}>
-                    <ThemedText style={styles.challengeTitle}>{item.title}</ThemedText>
-                    <View style={styles.challengeDetails}>
-                      <View style={styles.challengeType}>
-                      <ThemedText style={{ color: THEME.COLORS.primary }}>
-                        <FontAwesome5 name="calendar-alt" size={12} />
+                  <ThemedView style={styles.cardContainer}>
+                    <LinearGradient
+                      colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.7)']}
+                      style={styles.gradientOverlay}
+                    />
+                    <Image 
+                      source={{ uri: item.image_url || item.image || 'https://images.unsplash.com/photo-1501785888041-af3ef285b470' }} 
+                      style={styles.placeImage}
+                      contentFit="cover"
+                    />
+                    <View style={styles.placeInfo}>
+                      <ThemedText style={styles.placeName} numberOfLines={2}>
+                        {item.title}
                       </ThemedText>
-                      <ThemedText style={styles.challengeTypeText}>{
-                        item.deadline 
-                          ? new Date(item.deadline).toLocaleDateString('tr-TR', {day: 'numeric', month: 'short'})
-                          : 'Süresiz'
-                      }</ThemedText>
+                      <View style={styles.placeDetails}>
+                        <View style={styles.placeType}>
+                          <FontAwesome5 
+                            name={item.challenge_type === 'visit' ? 'map-marker-alt' : 
+                                  item.challenge_type === 'photo' ? 'camera' : 
+                                  item.challenge_type === 'social' ? 'users' : 
+                                  item.challenge_type === 'gastronomy' ? 'utensils' :
+                                  'tasks'} 
+                            size={12} 
+                            color={THEME.COLORS.light} 
+                          />
+                          <ThemedText style={styles.placeTypeText}>
+                            {item.category || item.challenge_type || 'Genel'}
+                          </ThemedText>
+                        </View>
+                        <View style={styles.placeRating}>
+                          <FontAwesome5 name="star" size={12} color={THEME.COLORS.accent} />
+                          <ThemedText style={styles.placeRatingText}>{item.points}</ThemedText>
+                        </View>
+                      </View>
                     </View>
-                    <View style={styles.challengePoints}>
+                    <TouchableOpacity style={styles.favoriteButton}>
                       <ThemedText style={{ color: THEME.COLORS.accent }}>
-                        <FontAwesome5 name="star" size={12} />
+                        <FontAwesome5 name="bookmark" size={16} />
                       </ThemedText>
-                      <ThemedText style={styles.challengePointsText}>{item.points}</ThemedText>
-                    </View>
-                  </View>
-                  </View>
+                    </TouchableOpacity>
+                  </ThemedView>
                 </TouchableOpacity>
               )}
             />
@@ -409,6 +571,37 @@ export default function HomeScreen() {
               <ThemedText style={styles.emptyStateText}>Henüz görev bulunamadı</ThemedText>
             </ThemedView>
           )}
+        </View>
+
+        {/* My Routes Section */}
+        <View style={styles.sectionContainer}>
+          <View style={styles.sectionHeader}>
+            <ThemedText style={styles.sectionTitle}>Rotalarım</ThemedText>
+            <TouchableOpacity onPress={() => router.push(`/route` as any)}>
+              <ThemedText style={styles.seeAllText}>Yeni Rota Oluştur</ThemedText>
+            </TouchableOpacity>
+          </View>
+
+          <ThemedView style={styles.routesContainer}>
+            <TouchableOpacity 
+              style={styles.createRouteCard}
+              activeOpacity={0.8}
+              onPress={() => router.push(`/route` as any)}
+            >
+              <LinearGradient
+                colors={[THEME.COLORS.primary, THEME.COLORS.secondary]}
+                style={styles.routeGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <FontAwesome5 name="route" size={24} color="white" />
+                <ThemedText style={styles.createRouteText}>Yeni Rota Oluştur</ThemedText>
+                <ThemedText style={styles.createRouteSubtext}>
+                  Başlangıç ve varış noktalarını belirle, rota üzerindeki yerleri keşfet
+                </ThemedText>
+              </LinearGradient>
+            </TouchableOpacity>
+          </ThemedView>
         </View>
 
         {/* Feed Posts / Gezgin Hikayeleri */}
@@ -734,55 +927,34 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 5,
   },
-  challengeCard: {
-    width: 200,
-    marginLeft: 20,
-    borderRadius: 15,
+  routesContainer: {
+    marginVertical: 8,
+  },
+  createRouteCard: {
+    height: 160,
+    borderRadius: 16,
     overflow: 'hidden',
-    backgroundColor: THEME.COLORS.card,
-    shadowColor: THEME.COLORS.shadowColor,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 2,
+    marginBottom: 16,
   },
-  challengeImage: {
-    width: '100%',
-    height: 120,
-  },
-  challengeInfo: {
-    padding: 10,
-  },
-  challengeTitle: {
-    fontSize: THEME.SIZES.medium,
-    fontWeight: 'bold',
-    marginBottom: 5,
-  },
-  challengeDetails: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  challengeType: {
-    flexDirection: 'row',
+  routeGradient: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
+    padding: 20,
   },
-  challengeTypeText: {
-    fontSize: 12,
-    marginLeft: 5,
-    color: THEME.COLORS.gray,
-  },
-  challengePoints: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  challengePointsText: {
-    fontSize: 12,
-    marginLeft: 5,
-    color: THEME.COLORS.accent,
+  createRouteText: {
+    fontSize: 18,
     fontWeight: 'bold',
+    color: '#fff',
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  createRouteSubtext: {
+    fontSize: 13,
+    color: '#fff',
+    opacity: 0.8,
+    textAlign: 'center',
+    maxWidth: '90%',
   },
   storyCard: {
     marginHorizontal: 20,

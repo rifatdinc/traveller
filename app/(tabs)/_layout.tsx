@@ -45,6 +45,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color }: { color: string }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
         }}
       />
+
       <Tabs.Screen
         name="challenges"
         options={{

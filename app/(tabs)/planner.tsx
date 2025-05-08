@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { StyleSheet, View, ScrollView, Image, TextInput, Dimensions, ActivityIndicator, Text, Pressable, Alert, Modal, TouchableOpacity, FlatList, RefreshControl } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
@@ -12,7 +13,7 @@ import { HapticTab } from '@/components/HapticTab';
 import { plannerService } from '@/services/plannerService';
 import { placesService } from '@/services/placesService';
 import { useAuth } from '@/hooks/useAuth';
-import { searchPlaces, getPlaceDetails, getPlacePhoto, searchNearbyPlaces, LocationCoords } from '@/lib/googleMapsService';
+import { router } from 'expo-router';
 import { PlaceSelectionModal } from '@/app/components/PlaceSelectionModal';
 
 // Arayüzler
@@ -39,6 +40,8 @@ interface Place {
   image_url?: string;
   visited_by: number;
   rating: number;
+  google_place_id: string;
+  location?: { latitude: number; longitude: number };
 }
 
 interface TripPlan {
@@ -269,18 +272,23 @@ export default function PlannerScreen() {
 
   // Google Maps API'den şehir için yerler getir ve veritabanına ekle
   const fetchAndAddPlacesForCity = async (cityName: string): Promise<Place[]> => {
+    const newPlaces: Place[] = [];
     try {
+      console.log('Searching for city:', cityName);
       // Google Places API'den şehir hakkında bilgi al
       const cityResults = await searchPlaces(cityName);
       if (!cityResults || cityResults.length === 0) {
+        console.error('No city results found for:', cityName);
         return [];
       }
       
       // Şehir için place_id al
       const cityPlaceId = cityResults[0].place_id;
+      console.log('Found city place_id:', cityPlaceId);
       const cityDetails = await getPlaceDetails(cityPlaceId);
       
       if (!cityDetails || !cityDetails.geometry || !cityDetails.geometry.location) {
+        console.error('Could not get city details for:', cityName);
         return [];
       }
       
@@ -289,65 +297,77 @@ export default function PlannerScreen() {
         latitude: cityDetails.geometry.location.lat,
         longitude: cityDetails.geometry.location.lng
       };
+      console.log('City coordinates:', location);
       
       // Turistik yerleri, restoranları ve diğer ilgi çekici yerleri getir
       const types = ['tourist_attraction', 'museum', 'restaurant', 'park', 'shopping_mall'];
-      const newPlaces: Place[] = [];
       
       // Her tür için ayrı ayrı arama yap
       for (const type of types) {
-        const nearbyResults = await searchNearbyPlaces(location, 5000, type);
-        
-        if (nearbyResults && nearbyResults.length > 0) {
-          // Her bir yeri işle ve veritabanına ekle
-          for (const place of nearbyResults.slice(0, 3)) { // Her türden en fazla 3 yer al
-            try {
-              // Yer fotoğrafı
-              let imageUrl = 'https://via.placeholder.com/300';
-              if (place.photos && place.photos.length > 0) {
-                imageUrl = getPlacePhoto(place.photos[0].photo_reference);
+        try {
+          console.log(`Searching for ${type} in ${cityName}`);
+          const nearbyResults = await searchNearbyPlaces(location, 10000, type); // 10km radius
+          
+          if (nearbyResults && nearbyResults.length > 0) {
+            console.log(`Found ${nearbyResults.length} ${type}s`);
+            // Her bir yeri işle ve veritabanına ekle
+            for (const place of nearbyResults.slice(0, 5)) { // En fazla 5 yer
+              try {
+                // Yer fotoğrafı
+                let imageUrl = 'https://via.placeholder.com/300';
+                if (place.photos && place.photos.length > 0) {
+                  imageUrl = getPlacePhoto(place.photos[0].photo_reference);
+                }
+                
+                // Yer türünü belirle
+                let placeType = 'Turistik Yer';
+                if (place.types.includes('museum')) {
+                  placeType = 'Müze';
+                } else if (place.types.includes('restaurant')) {
+                  placeType = 'Önerilen Restoran';
+                } else if (place.types.includes('park')) {
+                  placeType = 'Doğa Rotası';
+                } else if (place.types.includes('shopping_mall')) {
+                  placeType = 'Turistik Merkez';
+                }
+                
+                // Yer puanı
+                const rating = place.rating || Math.floor(Math.random() * 3) + 3;
+                
+                // Veritabanına eklenecek yer
+                const newPlaceData = {
+                  name: place.name,
+                  type: placeType,
+                  points: Math.floor(rating * 100),
+                  latitude: place.geometry.location.lat,
+                  longitude: place.geometry.location.lng,
+                  location: {
+                    latitude: place.geometry.location.lat,
+                    longitude: place.geometry.location.lng
+                  },
+                  city: cityName,
+                  description: place.vicinity || `${place.name}, ${cityName}`,
+                  image: imageUrl || 'https://via.placeholder.com/400',
+                  image_url: imageUrl || 'https://via.placeholder.com/400',
+                  visited_by: Math.floor(Math.random() * 50) + 5,
+                  rating: rating,
+                  google_place_id: place.place_id
+                };
+                
+                // Veritabanına ekle
+                const addedPlace = await placesService.insertPlace(newPlaceData);
+                if (addedPlace) {
+                  newPlaces.push(addedPlace);
+                }
+              } catch (err) {
+                console.error(`${place.name} eklenirken hata oluştu:`, err);
+                continue;
               }
-              
-              // Yer türünü belirle
-              let placeType = 'Turistik Yer';
-              if (place.types.includes('museum')) {
-                placeType = 'Müze';
-              } else if (place.types.includes('restaurant')) {
-                placeType = 'Önerilen Restoran';
-              } else if (place.types.includes('park')) {
-                placeType = 'Doğa Rotası';
-              } else if (place.types.includes('shopping_mall')) {
-                placeType = 'Turistik Merkez';
-              }
-              
-              // Yer puanı
-              const rating = place.rating || Math.floor(Math.random() * 3) + 3; // 3-5 arası rastgele puan
-              
-              // Veritabanına eklenecek yer
-              const newPlaceData = {
-                // Remove the id field and let the database generate one with uuid_generate_v4()
-                name: place.name,
-                type: placeType,
-                points: Math.floor(rating * 100),
-                latitude: place.geometry.location.lat,
-                longitude: place.geometry.location.lng,
-                city: cityName,
-                description: place.vicinity || `${place.name}, ${cityName}`,
-                image: imageUrl,     // Setting both image fields
-                image_url: imageUrl, // to the same value
-                visited_by: Math.floor(Math.random() * 50) + 5, // Rastgele ziyaretçi sayısı
-                rating: rating
-              };
-              
-              // Veritabanına ekle
-              const addedPlace = await placesService.insertPlace(newPlaceData);
-              if (addedPlace) {
-                newPlaces.push(addedPlace);
-              }
-            } catch (err) {
-              console.error(`${place.name} eklenirken hata oluştu:`, err);
             }
           }
+        } catch (typeError) {
+          console.error(`${type} türü için yerler alınırken hata oluştu:`, typeError);
+          continue;
         }
       }
       

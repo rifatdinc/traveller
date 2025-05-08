@@ -11,7 +11,6 @@ import { challengesService } from '@/services/challengesService';
 import { ChallengeRequirementItem } from '@/components/ChallengeRequirementItem';
 import { THEME } from '@/constants/Theme';
 import { Challenge } from '@/types';
-import { challenges } from '@/constants/MockData';
 
 const { width } = Dimensions.get('window');
 const CONTENT_WIDTH = width - 40;
@@ -23,6 +22,7 @@ export default function ChallengeDetailScreen() {
   const [error, setError] = useState<string | null>(null);
   const [isJoining, setIsJoining] = useState(false);
   const [hasJoined, setHasJoined] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     const loadChallengeAndStatus = async () => {
@@ -43,6 +43,14 @@ export default function ChallengeDetailScreen() {
     
     loadChallengeAndStatus();
   }, [id]);
+  
+  // Handle refresh after a requirement is completed
+  const handleRequirementCompleted = async (requirementId: string) => {
+    if (!id) return;
+    
+    // Refresh challenge details to update requirements status
+    await fetchChallengeDetails();
+  };
 
   const fetchChallengeDetails = async () => {
     try {
@@ -282,7 +290,12 @@ export default function ChallengeDetailScreen() {
             
             {challenge.requirements && challenge.requirements.length > 0 ? (
               challenge.requirements.map((req, index) => (
-                <ChallengeRequirementItem key={req.id || index} requirement={req} />
+                <ChallengeRequirementItem 
+                  key={req.id || index} 
+                  requirement={req} 
+                  challengeId={challenge.id}
+                  onCheckIn={handleRequirementCompleted}
+                />
               ))
             ) : (
               <ThemedText style={styles.emptyStateText}>

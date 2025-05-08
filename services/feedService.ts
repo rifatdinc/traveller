@@ -1,4 +1,3 @@
-import { feedPosts } from '@/constants/MockData';
 import { formatTimestamp } from '@/helpers/time.helper';
 import { supabase } from '@/lib/supabase';
 
@@ -20,12 +19,10 @@ export const feedService = {
       if (postsError) {
         console.error('Error fetching feed posts:', postsError);
         console.log('Returning mock data due to error');
-        return feedPosts;
       }
 
       if (!postsData || postsData.length === 0) {
         console.log('No posts found in database, returning mock data');
-        return feedPosts;
       }
 
       console.log('Posts found in database:', postsData.length);
@@ -68,7 +65,6 @@ export const feedService = {
       return formattedData;
     } catch (e) {
       console.error('Unexpected error in getAllPosts:', e);
-      return feedPosts;
     }
   },
 

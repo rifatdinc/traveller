@@ -28,13 +28,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data: { session } } = await supabase.auth.getSession();
       setSession(session);
       setUser(session?.user ?? null);
+      
+      // Ensure user exists in our database tables when they sign in
+      if (session?.user) {
+        try {
+          await supabase.rpc('get_or_create_user', {
+            p_user_id: session.user.id,
+            p_email: session.user.email || '',
+            p_username: null // Will use email as default
+          });
+        } catch (error) {
+          console.error('Error ensuring user exists:', error);
+        }
+      }
+      
       setLoading(false);
 
       // Listen for auth state changes
       const { data: { subscription } } = supabase.auth.onAuthStateChange(
-        (_event, session) => {
+        async (_event, session) => {
           setSession(session);
           setUser(session?.user ?? null);
+          
+          // Ensure user exists when auth state changes (login, signup, etc.)
+          if (session?.user) {
+            try {
+              await supabase.rpc('get_or_create_user', {
+                p_user_id: session.user.id,
+                p_email: session.user.email || '',
+                p_username: null // Will use email as default
+              });
+            } catch (error) {
+              console.error('Error ensuring user exists:', error);
+            }
+          }
+          
           setLoading(false);
         }
       );

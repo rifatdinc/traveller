@@ -1,5 +1,6 @@
-import { supabase } from '@/lib/supabase';
 import { Challenge } from '@/types';
+import { supabase } from '@/lib/supabase';
+import { placesService } from './placesService';
 
 // Helper functions for location-based challenges
 const getLocalizedChallengeTitle = (placeType: string, city: string) => {
@@ -48,6 +49,30 @@ const getLocalizedChallengeDescription = (placeType: string, city: string) => {
     return `${city}'in alışveriş merkezlerini ve çarşılarını keşfet.`;
   }
   return `${city}'in en ilgi çekici yerlerini keşfet ve şehri yakından tanı.`;
+};
+
+const getRequirementText = (placeType: string) => {
+  const type = placeType.toLowerCase();
+  if (type.includes('müze') || type.includes('museum')) {
+    return "müzeleri";
+  } else if (type.includes('tarihi') || type.includes('historical')) {
+    return "tarihi yerleri";
+  } else if (type.includes('park')) {
+    return "parkları";
+  } else if (type.includes('doğa') || type.includes('nature')) {
+    return "doğal güzellikleri";
+  } else if (type.includes('restoran') || type.includes('restaurant')) {
+    return "restoranları";
+  } else if (type.includes('kafe') || type.includes('cafe')) {
+    return "kafeleri";
+  } else if (type.includes('spor') || type.includes('sport')) {
+    return "spor tesislerini";
+  } else if (type.includes('cami') || type.includes('mosque')) {
+    return "camileri";
+  } else if (type.includes('alışveriş') || type.includes('shopping')) {
+    return "alışveriş yerlerini";
+  }
+  return "ilginç yerleri";
 };
 
 const getTypeImage = (placeType: string) => {
@@ -116,11 +141,245 @@ const getValidUntilDate = () => {
   return date.toISOString();
 };
 
+// Default types to use for location-based challenges when no specific places are found
+const defaultPlaceTypes = [
+  'müze', 'park', 'restoran', 'tarihi', 'kafe'
+];
+
+// Default place names for each type to create when no places exist
+const defaultPlaceNames: Record<string, string[]> = {
+  'müze': ['Şehir Müzesi', 'Arkeoloji Müzesi', 'Sanat Galerisi', 'Tarih Müzesi', 'Modern Sanat Müzesi'],
+  'park': ['Merkez Parkı', 'Şehir Parkı', 'Botanik Bahçesi', 'Sahil Parkı', 'Doğa Parkı'],
+  'restoran': ['Lezzet Durağı', 'Anadolu Mutfağı', 'Deniz Mahsülleri Restoranı', 'Kebapçı Mehmet', 'Geleneksel Lokanta'],
+  'tarihi': ['Tarihi Kale', 'Eski Çarşı', 'Tarihi Cami', 'Antik Yapılar', 'Tarihi Köprü'],
+  'kafe': ['Kahve Dünyası', 'Kitap & Kahve', 'Deniz Manzaralı Kafe', 'Tatlı Köşesi', 'Şehir Manzaralı Kafeterya']
+};
+
+// Helper function to create default places for a city - Updated to use real Google Places
+const createDefaultPlacesForCity = async (city: string, type: string) => {
+  try {
+    console.log(`Creating places for ${type} in ${city}...`);
+    const places = await placesService.createPlacesForCity(city, type);
+    return places;
+  } catch (error) {
+    console.error(`Error in createDefaultPlacesForCity for ${city}:`, error);
+    return [];
+  }
+};
+
+// Create default location challenge with place-specific requirements
+const createDefaultLocationChallenge = async (city: string) => {
+  try {
+    console.log(`Creating default challenges for ${city}...`);
+    const challenges = [];
+    
+    // First, create default places for each type
+    const createdPlacesByType: Record<string, any[]> = {};
+    
+    for (const type of defaultPlaceTypes) {
+      console.log(`Creating default places for ${type} in ${city}...`);
+      const places = await createDefaultPlacesForCity(city, type);
+      if (places.length > 0) {
+        createdPlacesByType[type] = places;
+      }
+    }
+    
+    // For each default type, create a challenge with place-specific requirements
+    for (const type of defaultPlaceTypes) {
+      const places = createdPlacesByType[type] || [];
+      if (places.length === 0) {
+        console.log(`No places created for ${type} in ${city}, skipping challenge`);
+        continue;
+      }
+      
+      const challengeTitle = getLocalizedChallengeTitle(type, city);
+      const challengeDesc = getLocalizedChallengeDescription(type, city);
+      
+      // Create the challenge object with target place IDs
+      const targetPlaces = places.slice(0, 3); // Use up to 3 places
+      const targetPlaceIds = targetPlaces.map(place => place.id);
+      
+      const newChallenge: any = {
+        title: challengeTitle,
+        description: challengeDesc,
+        points: Math.floor(Math.random() * 200) + 300, // 300-500 points
+        image_url: getTypeImage(type),
+        deadline: null, // Using null instead of 'Süresiz' for timestamp field
+        is_daily: false,
+        challenge_type: getChallengeTypeFromPlaceType(type),
+        category: getCategoryFromPlaceType(type),
+        difficulty: 'medium',
+        target_count: Math.min(3, targetPlaces.length),
+        target_place_ids: targetPlaceIds, // Store place IDs here
+        valid_until: getValidUntilDate(),
+        location: city
+      };
+      
+      // Add to database
+      const { data, error } = await supabase
+        .from('challenges')
+        .insert(newChallenge)
+        .select()
+        .single();
+        
+      if (error) {
+        console.error(`Error creating default challenge for ${type} in ${city}:`, error);
+      } else {
+        console.log(`Created default ${type} challenge for ${city}`);
+        challenges.push(data);
+        
+        // Add place-specific requirements for the challenge
+        const placeRequirements = targetPlaces.map(place => ({
+          challenge_id: data.id,
+          description: `${place.name} mekanını ziyaret et`,
+          type: 'visit_place',
+          target_id: place.id,
+          count: 1
+        }));
+        
+        // Add a photo requirement
+        placeRequirements.push({
+          challenge_id: data.id,
+          description: `${city}'deki ${getRequirementText(type)} fotoğrafla`,
+          type: 'take_photo',
+          target_id: null, // No specific target for this requirement
+          count: 1
+        });
+        
+        const { error: reqError } = await supabase
+          .from('challenge_requirements')
+          .insert(placeRequirements);
+          
+        if (reqError) {
+          console.error(`Error creating requirements for challenge ${data.id}:`, reqError);
+        } else {
+          console.log(`Created ${placeRequirements.length} requirements for challenge ${data.id}`);
+        }
+        
+        // Also create an entry in location_based_challenges table
+        const locationChallenge = {
+          title: challengeTitle,
+          description: challengeDesc,
+          image_url: getTypeImage(type),
+          points: newChallenge.points,
+          challenge_type: newChallenge.challenge_type,
+          category: newChallenge.category,
+          is_daily: false,
+          deadline: null, // Using null instead of 'Süresiz'
+          difficulty: 'medium',
+          valid_until: new Date(getValidUntilDate())
+        };
+        
+        const { error: locationError } = await supabase
+          .from('location_based_challenges')
+          .insert(locationChallenge);
+          
+        if (locationError) {
+          console.error(`Error adding to location_based_challenges for ${city}:`, locationError);
+        }
+      }
+    }
+    
+    // Create one special discovery challenge for the city with place-specific requirements
+    // Get 3 random places from all created places
+    const allCreatedPlaces = Object.values(createdPlacesByType).flat();
+    if (allCreatedPlaces.length > 0) {
+      const specialPlaces = allCreatedPlaces
+        .sort(() => 0.5 - Math.random()) // Shuffle
+        .slice(0, Math.min(3, allCreatedPlaces.length)); // Take up to 3
+        
+      const specialChallenge: any = {
+        title: `${city} Kaşifi`,
+        description: `${city}'i keşfet ve bu güzel şehrin tadını çıkar!`,
+        points: 500,
+        image_url: 'https://images.unsplash.com/photo-1569949381669-ecf31ae8e613',
+        deadline: null, // Using null instead of 'Süresiz' for timestamp field
+        is_daily: false,
+        challenge_type: 'general',
+        category: 'general',
+        difficulty: 'medium',
+        target_count: specialPlaces.length,
+        target_place_ids: specialPlaces.map(p => p.id),
+        valid_until: getValidUntilDate(),
+        location: city
+      };
+      
+      const { data: specialData, error: specialError } = await supabase
+        .from('challenges')
+        .insert(specialChallenge)
+        .select()
+        .single();
+        
+      if (specialError) {
+        console.error(`Error creating special challenge for ${city}:`, specialError);
+      } else {
+        console.log(`Created special challenge for ${city}`);
+        
+        // Add place-specific requirements for the special challenge
+        const specialRequirements = [];
+        
+        for (const place of specialPlaces) {
+          specialRequirements.push({
+            challenge_id: specialData.id,
+            description: `${place.name} mekanını ziyaret et`,
+            type: 'visit_place',
+            target_id: place.id,
+            count: 1
+          });
+          
+          specialRequirements.push({
+            challenge_id: specialData.id,
+            description: `${place.name} mekanında bir fotoğraf çek ve paylaş`,
+            type: 'take_photo',
+            target_id: place.id,
+            count: 1
+          });
+        }
+        
+        const { error: reqError } = await supabase
+          .from('challenge_requirements')
+          .insert(specialRequirements);
+          
+        if (reqError) {
+          console.error(`Error creating requirements for special challenge ${specialData.id}:`, reqError);
+        } else {
+          console.log(`Created ${specialRequirements.length} requirements for special challenge ${specialData.id}`);
+        }
+        
+        challenges.push(specialData);
+        
+        // Add to location_based_challenges table too
+        const locationSpecialChallenge = {
+          title: specialChallenge.title,
+          description: specialChallenge.description,
+          image_url: specialChallenge.image_url,
+          points: specialChallenge.points,
+          challenge_type: specialChallenge.challenge_type,
+          category: specialChallenge.category,
+          is_daily: false,
+          deadline: null, // Using null instead of 'Süresiz'
+          difficulty: 'medium',
+          valid_until: new Date(getValidUntilDate())
+        };
+        
+        await supabase.from('location_based_challenges').insert(locationSpecialChallenge);
+      }
+    }
+    
+    return challenges;
+  } catch (error) {
+    console.error(`Error in createDefaultLocationChallenge for ${city}:`, error);
+    return [];
+  }
+};
+
 // Location-based challenge service
 export const locationChallengeService = {
   // Kullanıcının bulunduğu şehre göre görevleri getir
   getLocationBasedChallenges: async (city: string) => {
     try {
+      console.log(`Fetching location-based challenges for ${city}...`);
+      
       // Önce şehirdeki yerleri getir
       const { data: placesData, error: placesError } = await supabase
         .from('places')
@@ -132,17 +391,17 @@ export const locationChallengeService = {
         return [];
       }
 
+      // Eğer şehirde hiç yer yoksa, önce default yerleri oluştur, sonra görevleri
       if (!placesData || placesData.length === 0) {
-        console.log(`No places found in ${city}`);
-        return [];
+        console.log(`No places found in ${city}, creating default places and challenges`);
+        return await createDefaultLocationChallenge(city);
       }
 
       // Bu şehirdeki yerlerle ilgili mevcut görevleri getir
-      const placeIds = placesData.map(place => place.id);
       const { data: existingChallenges, error: challengesError } = await supabase
         .from('challenges')
         .select('*')
-        .filter('target_place_ids', 'cs', `{${placeIds.join(',')}}`)
+        .eq('location', city)
         .order('created_at', { ascending: false });
 
       if (challengesError) {
@@ -152,10 +411,12 @@ export const locationChallengeService = {
 
       // Eğer bu şehir için görevler varsa onları döndür
       if (existingChallenges && existingChallenges.length > 0) {
+        console.log(`Found ${existingChallenges.length} existing challenges for ${city}`);
         return existingChallenges as Challenge[];
       }
 
       // Şehirdeki yerlere göre yeni otomatik görevler oluştur
+      console.log(`Creating new challenges based on ${placesData.length} places in ${city}`);
       const challenges: Challenge[] = [];
       
       // Şehirdeki yerleri gruplandır (türlerine göre)
@@ -172,19 +433,24 @@ export const locationChallengeService = {
           const challengeTitle = getLocalizedChallengeTitle(type, city);
           const challengeDesc = getLocalizedChallengeDescription(type, city);
           
+          // Maksimum 5 yer seç ve IDs'leri topla
+          const targetPlaces = places.slice(0, 5);
+          const targetPlaceIds = targetPlaces.map(p => p.id);
+          
           const newChallenge: any = {
             title: challengeTitle,
             description: challengeDesc,
             points: Math.floor(Math.random() * 200) + 300, // 300-500 arası puan
             image_url: getTypeImage(type),
-            deadline: 'Süresiz',
+            deadline: null, // Using null instead of 'Süresiz' string
             is_daily: false,
             challenge_type: getChallengeTypeFromPlaceType(type),
             category: getCategoryFromPlaceType(type),
             difficulty: places.length > 5 ? 'hard' : (places.length > 3 ? 'medium' : 'easy'),
             target_count: Math.min(places.length, 5),
-            target_place_ids: places.slice(0, 5).map(p => p.id), // En fazla 5 yer
+            target_place_ids: targetPlaceIds, // Storing place IDs array
             valid_until: getValidUntilDate(),
+            location: city
           };
           
           // Yeni görevi veritabanına ekle
@@ -197,8 +463,9 @@ export const locationChallengeService = {
           if (error) {
             console.error(`Error creating challenge for ${type} in ${city}:`, error);
           } else {
-            // Görev gereksinimleri oluştur
-            const targetPlaces = places.slice(0, 5);
+            console.log(`Created challenge for ${type} in ${city}: ${data.title}`);
+            
+            // Görev gereksinimleri oluştur - her yer için özel bir gereksinim
             const requirements = targetPlaces.map(place => ({
               challenge_id: data.id,
               description: `${place.name} mekanını ziyaret et`,
@@ -207,12 +474,23 @@ export const locationChallengeService = {
               count: 1
             }));
             
+            // Fotoğraf çekme gereksinimleri ekle
+            requirements.push({
+              challenge_id: data.id,
+              description: `${city}'deki ${getRequirementText(type)} fotoğrafla`,
+              type: 'take_photo',
+              target_id: null, // No specific target for this requirement
+              count: 1
+            });
+            
             const { error: reqError } = await supabase
               .from('challenge_requirements')
               .insert(requirements);
               
             if (reqError) {
               console.error(`Error creating requirements for challenge ${data.id}:`, reqError);
+            } else {
+              console.log(`Created ${requirements.length} requirements for challenge ${data.id}`);
             }
             
             challenges.push(data);
@@ -222,13 +500,14 @@ export const locationChallengeService = {
       
       // Şehir için en az bir özel görev oluştur
       if (placesData.length > 0) {
+        // Rastgele 3 özel yer seç
         const specialPlaces = placesData.sort(() => 0.5 - Math.random()).slice(0, 3);
         const specialChallenge: any = {
           title: `${city} Kaşifi`,
           description: `${city}'in en özel yerlerini keşfet ve fotoğrafla!`,
           points: 500,
           image_url: 'https://images.unsplash.com/photo-1569949381669-ecf31ae8e613',
-          deadline: 'Süresiz',
+          deadline: null, // Using null instead of 'Süresiz' string
           is_daily: false,
           challenge_type: 'collection',
           category: 'culture',
@@ -236,6 +515,7 @@ export const locationChallengeService = {
           target_count: specialPlaces.length,
           target_place_ids: specialPlaces.map(p => p.id),
           valid_until: getValidUntilDate(),
+          location: city
         };
         
         const { data, error } = await supabase
@@ -247,7 +527,9 @@ export const locationChallengeService = {
         if (error) {
           console.error(`Error creating special challenge for ${city}:`, error);
         } else {
-          // Görev gereksinimleri oluştur
+          console.log(`Created special challenge for ${city}: ${data.title}`);
+          
+          // Görev gereksinimleri oluştur - her yer için ziyaret ve fotoğraf
           const requirements = [];
           
           for (const place of specialPlaces) {
@@ -274,6 +556,8 @@ export const locationChallengeService = {
             
           if (reqError) {
             console.error(`Error creating requirements for special challenge ${data.id}:`, reqError);
+          } else {
+            console.log(`Created ${requirements.length} requirements for special challenge ${data.id}`);
           }
           
           challenges.push(data);

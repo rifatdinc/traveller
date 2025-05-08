@@ -22,20 +22,21 @@ export interface Badge {
 export interface Place {
   id: string;
   name: string;
+  image_url: string; // Ensure this is not optional if you always provide a default
   type: string;
+  city: string;
+  description: string;
   points: number;
-  location?: {
+  rating: number;
+  visited_by?: number; // Optional
+  location: {
     latitude: number;
     longitude: number;
   };
-  city: string;
-  description: string;
-  image_url: string;
-  image?: string; // Mock data compatibility
-  visited_by?: number;
-  rating: number;
-  created_at?: string;
-  status?: 'visited' | 'not_visited'; // Place visit status in a plan
+  google_place_id?: string; // Optional
+  address?: string; // Add optional address field
+  aiReason?: string; // Keep if used elsewhere
+  photo_count?: number; // Keep if used elsewhere, otherwise remove
 }
 
 export interface InterestTag {

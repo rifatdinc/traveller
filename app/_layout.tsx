@@ -31,11 +31,41 @@ export default function RootLayout() {
   return (
     <AuthProvider>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <Stack>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="+not-found" />
+        <Stack
+          screenOptions={{
+            headerStyle: {
+              backgroundColor: colorScheme === 'dark' ? '#1A1A1A' : '#F2F2F2',
+            },
+            headerTintColor: '#4A80F0',
+            headerTitleStyle: {
+              fontWeight: '600',
+              fontSize: 18,
+            },
+            headerShadowVisible: true,
+            headerBackTitle: 'Geri',
+            animation: 'slide_from_right',
+          }}
+        >
+          <Stack.Screen 
+            name="(tabs)" 
+            options={{
+              headerTitle: 'Travel Points',
+            }} 
+          />
+          <Stack.Screen 
+            name="route" 
+            options={{
+              headerTitle: 'Rota Oluşturucu',
+            }} 
+          />
+          <Stack.Screen 
+            name="+not-found"
+            options={{
+              headerShown: false
+            }}
+          />
         </Stack>
-        <StatusBar style="auto" />
+        <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
       </ThemeProvider>
     </AuthProvider>
   );

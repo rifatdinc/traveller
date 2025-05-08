@@ -237,10 +237,10 @@ export default function ChallengesScreen() {
               style={styles.challengeCard}
               onPress={() => router.push(`/challenge/${challenge.id}` as any)}
             >
-              <Image 
-                source={{ uri: challenge.image_url || challenge.image }}
+              <Image
+                source={{ uri: challenge.image_url }}
                 style={styles.challengeImage}
-                resizeMode="cover"
+                contentFit="cover" // resizeMode değiştirildi
               />
               <View style={styles.challengeContent}>
                 <View style={styles.challengeHeader}>

@@ -191,10 +191,10 @@ export default function LoginScreen() {
               }
             ]}
           >
-            <Image 
-              source={require('@/assets/images/icon.png')} 
+            <Image
+              source={require('@/assets/images/icon.png')} // Uygulama ikonunuzu buraya ekleyin
               style={styles.logo}
-              resizeMode="contain"
+              contentFit="contain" // resizeMode değiştirildi
             />
             <ThemedText style={styles.appTitle}>TravelPoints</ThemedText>
             <ThemedText style={styles.appSlogan}>Yeni yerler keşfet, anılar biriktir</ThemedText>

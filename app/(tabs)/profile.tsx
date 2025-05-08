@@ -223,6 +223,13 @@ export default function ProfileScreen() {
     }
 
     try {
+      // First ensure the user exists in both users and profiles tables
+      await supabase.rpc('get_or_create_user', {
+        p_user_id: user.id,
+        p_email: user.email || '',
+        p_username: null
+      });
+      
       // Kullanıcı profil bilgilerini çek
       const { data, error } = await supabase
         .from('users')

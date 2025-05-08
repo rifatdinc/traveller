@@ -93,6 +93,13 @@ export default function RegisterScreen() {
           throw profileError;
         }
         
+        // Ensure the profile record is created as well
+        await supabase.rpc('get_or_create_user', {
+          p_user_id: userData.user.id,
+          p_email: email,
+          p_username: username
+        });
+        
         Alert.alert(
           'Kayıt Başarılı', 
           'Hesabınız başarıyla oluşturuldu. Email adresinizi onayladıktan sonra giriş yapabilirsiniz.',
@@ -113,10 +120,10 @@ export default function RegisterScreen() {
       
       <View style={styles.header}>
         <View style={styles.logoContainer}>
-          <Image 
-            source={require('@/assets/images/icon.png')} 
+          <Image
+            source={require('@/assets/images/icon.png')} // Uygulama ikonunuzu buraya ekleyin
             style={styles.logo}
-            resizeMode="contain"
+            contentFit="contain" // resizeMode değiştirildi
           />
         </View>
         <ThemedText style={styles.headerTitle}>TravelPoints</ThemedText>

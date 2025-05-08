@@ -391,7 +391,8 @@ export default function PlanDetailScreen() {
   return (
     <>
       <Stack.Screen options={{ 
-        title: plan.title || 'Plan Detayı',
+        // Use optional chaining to safely access title
+        title: plan?.title || 'Plan Detayı', 
         headerShown: true,
       }} />
       
@@ -406,11 +407,15 @@ export default function PlanDetailScreen() {
           />
         }
       >
-        <Image 
-          source={{ uri: plan.image_url || 'https://via.placeholder.com/800x400' }} 
-          style={styles.headerImage}
-          resizeMode="cover"
-        />
+        {/* Check if plan exists before accessing its properties */}
+        {plan && (
+          <Image
+            // Use plan?.image_url and the defined fallback URL
+            source={{ uri: plan.image_url || DEFAULT_IMAGE_URL }} 
+            style={styles.headerImage}
+            resizeMode="cover" // Changed contentFit to resizeMode
+          />
+        )}
         
         <View style={styles.header}>
           <View style={styles.titleContainer}>
@@ -430,120 +435,133 @@ export default function PlanDetailScreen() {
               </View>
             )}
           </View>
-          <View style={styles.metaContainer}>
-            <View style={styles.metaItem}>
-              <FontAwesome5 name="calendar-alt" size={14} color={THEME.COLORS.primary} />
-              <ThemedText style={styles.metaText}>{plan.duration}</ThemedText>
+          {plan && (
+            <View style={styles.metaContainer}>
+              <View style={styles.metaItem}>
+                <FontAwesome5 name="calendar-alt" size={14} color={THEME.COLORS.primary} />
+                <ThemedText style={styles.metaText}>{plan.duration}</ThemedText>
+              </View>
+              <View style={styles.metaItem}>
+                <FontAwesome5 name="wallet" size={14} color={THEME.COLORS.primary} />
+                <ThemedText style={styles.metaText}>{plan.budget}</ThemedText>
+              </View>
+              <View style={styles.metaItem}>
+                <FontAwesome5 name="tags" size={14} color={THEME.COLORS.primary} />
+                <ThemedText style={styles.metaText}>{plan.category}</ThemedText>
+              </View>
             </View>
-            <View style={styles.metaItem}>
-              <FontAwesome5 name="wallet" size={14} color={THEME.COLORS.primary} />
-              <ThemedText style={styles.metaText}>{plan.budget}</ThemedText>
-            </View>
-            <View style={styles.metaItem}>
-              <FontAwesome5 name="tags" size={14} color={THEME.COLORS.primary} />
-              <ThemedText style={styles.metaText}>{plan.category}</ThemedText>
-            </View>
-          </View>
-          {plan.description && (
-            <ThemedText style={styles.description}>{plan.description}</ThemedText>
           )}
-        </View>
-
-        <View style={styles.routeSection}>
-          <View style={styles.sectionHeader}>
-            <FontAwesome5 name="route" size={20} color={THEME.COLORS.primary} />
-            <ThemedText style={styles.sectionTitle}>Gezi Rotası</ThemedText>
-          </View>
-          
-          <View style={styles.routeContainer}>
-            <View style={styles.routeVisual}>
-              {plan.places && plan.places.length > 0 ? (
-                plan.places.map((place, index) => (
-                  <View key={place.id} style={styles.routePointContainer}>
-                    <View style={[
-                      styles.routePointNumber,
-                      place.status === 'visited' && styles.visitedRoutePoint
-                    ]}>
-                      {place.status === 'visited' ? (
-                        <FontAwesome5 name="check" size={14} color={THEME.COLORS.white} />
-                      ) : (
-                        <ThemedText style={styles.routePointNumberText}>{index + 1}</ThemedText>
-                      )}
-                    </View>
-                    
-                    {index < (plan.places?.length || 0) - 1 && (
-                      <View style={styles.routeLine} />
-                    )}
-                    
-                    <View style={styles.routePointInfo}>
-                      <ThemedText style={styles.routePointName}>{place.name}</ThemedText>
-                      
-                      <TouchableOpacity 
-                        style={[
-                          styles.visitStatusBadge,
-                          place.status === 'visited' ? styles.visitedBadge : styles.notVisitedBadge
-                        ]}
-                        disabled={updatingPlace === place.id || plan.status === 'cancelled' || plan.status === 'completed'}
-                        onPress={() => handleToggleVisitStatus(place.id, place.status === 'visited' ? 'not_visited' : 'visited')}
-                      >
-                        {updatingPlace === place.id ? (
-                          <ActivityIndicator size="small" color={THEME.COLORS.white} />
-                        ) : (
-                          <FontAwesome5 
-                            name={place.status === 'visited' ? "check-circle" : "circle"} 
-                            size={16} 
-                            color={THEME.COLORS.white} 
-                            solid={place.status === 'visited'}
-                          />
-                        )}
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                ))
-              ) : (
-                <ThemedText style={styles.infoText}>Bu planda rotada yer bulunmuyor.</ThemedText>
+          {plan && (
+            // Removed style={styles.descriptionSection} as it doesn't exist
+            <View> 
+              {plan.description && (
+                <ThemedText style={styles.description}>{plan.description}</ThemedText>
               )}
             </View>
-          </View>
-        </View>
-
-        <View style={styles.placesSection}>
-          <View style={styles.sectionHeader}>
-            <FontAwesome5 name="map-marker-alt" size={20} color={THEME.COLORS.primary} />
-            <ThemedText style={styles.sectionTitle}>Ziyaret Edilecek Yerler</ThemedText>
-          </View>
-          
-          {plan.places && plan.places.length > 0 ? (
-            plan.places.map((place, index) => (
-              <TouchableOpacity 
-                key={place.id} 
-                style={styles.placeItem}
-                onPress={() => router.push(`/place/${place.id}`)}
-              >
-                <View style={styles.placeOrderContainer}>
-                  <ThemedText style={styles.placeOrder}>{index + 1}</ThemedText>
-                </View>
-                
-                <Image 
-                  source={{ uri: place.image_url || place.image || 'https://via.placeholder.com/60x60' }} 
-                  style={styles.placeImage}
-                  resizeMode="cover"
-                />
-                
-                <View style={styles.placeInfo}>
-                  <ThemedText style={styles.placeName}>{place.name}</ThemedText>
-                  <ThemedText style={styles.placeType}>{place.type}</ThemedText>
-                  <ThemedText style={styles.placeDescription} numberOfLines={2}>
-                    {place.description || `${place.name}, ${place.city || 'Türkiye'} bölgesinde popüler bir turistik yer.`}
-                  </ThemedText>
-                </View>
-                <FontAwesome5 name="chevron-right" size={14} color={THEME.COLORS.gray} />
-              </TouchableOpacity>
-            ))
-          ) : (
-            <ThemedText style={styles.infoText}>Bu plana eklenmiş yer bulunmuyor.</ThemedText>
           )}
         </View>
+
+        {/* Route Section */}
+        {plan && (
+          <View style={styles.routeSection}>
+            <View style={styles.sectionHeader}>
+              <FontAwesome5 name="route" size={20} color={THEME.COLORS.primary} />
+              <ThemedText style={styles.sectionTitle}>Gezi Rotası</ThemedText>
+            </View>
+            
+            <View style={styles.routeContainer}>
+              <View style={styles.routeVisual}>
+                {plan.places && plan.places.length > 0 ? (
+                  plan.places.map((place, index) => (
+                    <View key={place.id} style={styles.routePointContainer}>
+                      <View style={[
+                        styles.routePointNumber,
+                        place.status === 'visited' && styles.visitedRoutePoint
+                      ]}>
+                        {place.status === 'visited' ? (
+                          <FontAwesome5 name="check" size={14} color={THEME.COLORS.white} />
+                        ) : (
+                          <ThemedText style={styles.routePointNumberText}>{index + 1}</ThemedText>
+                        )}
+                      </View>
+                      
+                      {index < (plan.places?.length || 0) - 1 && (
+                        <View style={styles.routeLine} />
+                      )}
+                      
+                      <View style={styles.routePointInfo}>
+                        <ThemedText style={styles.routePointName}>{place.name}</ThemedText>
+                        
+                        <TouchableOpacity 
+                          style={[
+                            styles.visitStatusBadge,
+                            place.status === 'visited' ? styles.visitedBadge : styles.notVisitedBadge
+                          ]}
+                          disabled={updatingPlace === place.id || plan.status === 'cancelled' || plan.status === 'completed'}
+                          onPress={() => handleToggleVisitStatus(place.id, place.status === 'visited' ? 'not_visited' : 'visited')}
+                        >
+                          {updatingPlace === place.id ? (
+                            <ActivityIndicator size="small" color={THEME.COLORS.white} />
+                          ) : (
+                            <FontAwesome5 
+                              name={place.status === 'visited' ? "check-circle" : "circle"} 
+                              size={16} 
+                              color={THEME.COLORS.white} 
+                              solid={place.status === 'visited'}
+                            />
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))
+                ) : (
+                  <ThemedText style={styles.infoText}>Bu planda rotada yer bulunmuyor.</ThemedText>
+                )}
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Places Section */}
+        {plan && (
+          <View style={styles.placesSection}>
+            <View style={styles.sectionHeader}>
+              <FontAwesome5 name="map-marker-alt" size={20} color={THEME.COLORS.primary} />
+              <ThemedText style={styles.sectionTitle}>Ziyaret Edilecek Yerler</ThemedText>
+            </View>
+            
+            {plan.places && plan.places.length > 0 ? (
+              plan.places.map((place, index) => (
+                <TouchableOpacity 
+                  key={place.id} 
+                  style={styles.placeItem}
+                  onPress={() => router.push(`/place/${place.id}`)}
+                >
+                  <View style={styles.placeOrderContainer}>
+                    <ThemedText style={styles.placeOrder}>{index + 1}</ThemedText>
+                  </View>
+                  
+                  <Image
+                    source={{ uri: place.image_url || place.image || DEFAULT_IMAGE_URL }} // Use image_url or image from Place type
+                    style={styles.placeImage}
+                    resizeMode="cover" // Changed contentFit to resizeMode
+                  />
+                  
+                  <View style={styles.placeInfo}>
+                    <ThemedText style={styles.placeName}>{place.name}</ThemedText>
+                    <ThemedText style={styles.placeType}>{place.type}</ThemedText>
+                    <ThemedText style={styles.placeDescription} numberOfLines={2}>
+                      {place.description || `${place.name}, ${place.city || 'Türkiye'} bölgesinde popüler bir turistik yer.`}
+                    </ThemedText>
+                  </View>
+                  <FontAwesome5 name="chevron-right" size={14} color={THEME.COLORS.gray} />
+                </TouchableOpacity>
+              ))
+            ) : (
+              <ThemedText style={styles.infoText}>Bu plana eklenmiş yer bulunmuyor.</ThemedText>
+            )}
+          </View>
+        )}
         
         {/* Show Cancel Button if plan is not completed or cancelled */}
         {(!plan.status || plan.status === 'pending' || plan.status === 'ongoing') && (
@@ -568,6 +586,9 @@ export default function PlanDetailScreen() {
     </>
   );
 }
+
+// Define DEFAULT_IMAGE_URL if not already defined
+const DEFAULT_IMAGE_URL = 'https://via.placeholder.com/400x200?text=Image+Not+Available';
 
 const styles = StyleSheet.create({
   container: {

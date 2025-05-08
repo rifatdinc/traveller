@@ -1,38 +1,6 @@
-// Mock data for the TravelPoints app
-import { Colors } from './Colors';
-
-// User profile mock data
-export const currentUser = {
-  id: 'user1',
-  username: 'traveller123',
-  email: 'user@example.com',
-  avatar: 'https://randomuser.me/api/portraits/men/32.jpg',
-  totalPoints: 3450,
-  level: 'Gezgin Ustası',
-  rank: 24,
-  visitedPlaces: 32,
-  badges: [
-    { id: 'b1', name: '10 Şehir Gezgini', icon: 'map' },
-    { id: 'b2', name: 'Kültür Meraklısı', icon: 'building-columns' },
-    { id: 'b3', name: 'Doğa Tutkunu', icon: 'tree' },
-  ],
-  friends: ['user2', 'user3', 'user4']
-};
-
-// Mock places data
-export const places = [
-  {
-    id: 'place1',
-    name: 'Ayasofya',
-    type: 'Tarihi Yer',
-    points: 200,
-    location: { latitude: 41.008587, longitude: 28.980175 },
-    city: 'İstanbul',
-    description: 'Eski bir Ortodoks kilisesi, daha sonra cami, şimdi müze olan tarihi bir yapı.',
-    image: 'https://images.unsplash.com/photo-1545809264-9e1b9a0c9267',
-    visitedBy: 1243,
-    rating: 4.8
-  },
+// File deprecated - all data comes from Google Places API and database now
+export const places = [];
+export const currentUser = null;
   {
     id: 'place2',
     name: 'Kapadokya',
@@ -95,21 +63,8 @@ export const places = [
   }
 ];
 
-// Mock feed posts
-export const feedPosts = [
-  {
-    id: 'post1',
-    userId: 'user2',
-    username: 'adventurer42',
-    userAvatar: 'https://randomuser.me/api/portraits/women/42.jpg',
-    placeId: 'place2',
-    placeName: 'Kapadokya',
-    image: 'https://images.unsplash.com/photo-1527004013197-933c4bb611b3',
-    description: 'Hayatımın en güzel deneyimlerinden biri! Güneş doğarken balonda olmak inanılmazdı.',
-    likes: 124,
-    comments: 18,
-    timestamp: '2 saat önce',
-  },
+export const currentUser = null;
+export const feedPosts = [];
   {
     id: 'post2',
     userId: 'user3',

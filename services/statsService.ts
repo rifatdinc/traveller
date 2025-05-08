@@ -1,12 +1,28 @@
 import { supabase } from '@/lib/supabase';
 
-// Kullanıcı istatistikleri servisleri
+// User statistics service
+export interface UserStats {
+  user_id: string;
+  total_points: number;
+  level: number;
+  visited_places: number;
+  checkin_count: number;
+  cities_visited: number;
+  rank?: number;
+}
 
 export const statsService = {
-  // Kullanıcı istatistiklerini getir
-  getUserStats: async (userId: string) => {
+  // Get user statistics
+  getUserStats: async (userId: string): Promise<UserStats | null> => {
     try {
-      // İlk olarak user_stats tablosunda kullanıcı var mı kontrol et
+      // Ensure the user exists in our database tables
+      await supabase.rpc('get_or_create_user', {
+        p_user_id: userId,
+        p_email: '',  // We might not have the email here
+        p_username: null
+      });
+      
+      // First check if user exists in user_stats table
       const { data, error } = await supabase
         .from('user_stats')
         .select('*')
@@ -14,7 +30,7 @@ export const statsService = {
         .single();
 
       if (error) {
-        // Eğer kullanıcının istatistikleri yoksa, yeni bir kayıt oluştur
+        // If user doesn't have stats yet, create a new record
         if (error.code === 'PGRST116') {
           return await statsService.createUserStats(userId);
         }
@@ -29,24 +45,31 @@ export const statsService = {
     }
   },
 
-  // Kullanıcının puanlarını artır
-  addUserPoints: async (userId: string, points: number) => {
+  // Add points to a user and record in points_history
+  addUserPoints: async (
+    userId: string, 
+    points: number,
+    details?: { 
+      action: string; 
+      details?: Record<string, any>
+    }
+  ) => {
     try {
-      // Önce kullanıcının mevcut istatistiklerini getir
+      // First get the user's current stats
       const stats = await statsService.getUserStats(userId);
       if (!stats) {
         console.error('User stats not found for adding points');
         return false;
       }
 
-      // Yeni toplam puanı hesapla
+      // Calculate new total points
       const currentPoints = stats.total_points || 0;
       const newTotalPoints = currentPoints + points;
 
-      // Seviye hesapla (her 500 puan için 1 seviye)
+      // Calculate level (1 level for every 500 points)
       const newLevel = Math.floor(newTotalPoints / 500) + 1;
 
-      // İstatistikleri güncelle
+      // Update the user stats
       const { error } = await supabase
         .from('user_stats')
         .update({
@@ -60,7 +83,23 @@ export const statsService = {
         return false;
       }
 
-      // Rozetler için kontrol
+      // Record the points history
+      if (details) {
+        const { error: historyError } = await supabase
+          .from('points_history')
+          .insert({
+            user_id: userId,
+            points: points,
+            action: details.action,
+            details: details.details ? JSON.stringify(details.details) : null
+          });
+
+        if (historyError) {
+          console.error('Error recording points history:', historyError);
+        }
+      }
+
+      // Check for badges
       await statsService.checkBadgesForPoints(userId, newTotalPoints, newLevel);
 
       return true;
@@ -70,31 +109,31 @@ export const statsService = {
     }
   },
 
-  // Puan bazlı rozet kontrolleri
+  // Check for badges based on points and level
   checkBadgesForPoints: async (userId: string, totalPoints: number, level: number) => {
     try {
-      // Belirli puan eşiklerine göre rozetleri kontrol et
+      // Define badge thresholds
       const pointBadges = [
-        { id: 'points_100', name: 'İlk Adımlar', threshold: 100, icon: 'baby-carriage' },
-        { id: 'points_500', name: 'Gezgin Çırak', threshold: 500, icon: 'shoe-prints' },
-        { id: 'points_1000', name: 'Keşifçi', threshold: 1000, icon: 'compass' },
-        { id: 'points_2500', name: 'Macera Ustası', threshold: 2500, icon: 'mountain' },
-        { id: 'points_5000', name: 'Seyahat Gurusu', threshold: 5000, icon: 'globe-europe' }
+        { id: 'points_100', name: 'First Steps', threshold: 100, icon: 'baby-carriage' },
+        { id: 'points_500', name: 'Traveler Apprentice', threshold: 500, icon: 'shoe-prints' },
+        { id: 'points_1000', name: 'Explorer', threshold: 1000, icon: 'compass' },
+        { id: 'points_2500', name: 'Adventure Master', threshold: 2500, icon: 'mountain' },
+        { id: 'points_5000', name: 'Travel Guru', threshold: 5000, icon: 'globe-europe' }
       ];
 
-      // Seviye rozetleri
+      // Level badges
       const levelBadges = [
-        { id: 'level_3', name: 'Yükseliş', threshold: 3, icon: 'arrow-up' },
-        { id: 'level_5', name: 'Uzman Gezgin', threshold: 5, icon: 'star' },
-        { id: 'level_10', name: 'Keşif Üstadı', threshold: 10, icon: 'crown' }
+        { id: 'level_3', name: 'Rising Star', threshold: 3, icon: 'arrow-up' },
+        { id: 'level_5', name: 'Expert Traveler', threshold: 5, icon: 'star' },
+        { id: 'level_10', name: 'Discovery Master', threshold: 10, icon: 'crown' }
       ];
 
-      // Hak kazanılan rozetleri belirle
+      // Determine earned badges
       const earnedPointBadges = pointBadges.filter(badge => totalPoints >= badge.threshold);
       const earnedLevelBadges = levelBadges.filter(badge => level >= badge.threshold);
       const allEarnedBadges = [...earnedPointBadges, ...earnedLevelBadges];
 
-      // Kullanıcının mevcut rozetlerini getir
+      // Get user's existing badges
       const { data: existingBadges, error } = await supabase
         .from('user_badges')
         .select('badge_id')
@@ -107,11 +146,11 @@ export const statsService = {
 
       const existingBadgeIds = existingBadges.map(b => b.badge_id);
 
-      // Yeni kazanılan rozetleri bul
+      // Find newly earned badges
       const newBadges = allEarnedBadges.filter(badge => !existingBadgeIds.includes(badge.id));
 
       for (const badge of newBadges) {
-        // Önce rozet DB'de var mı kontrol et, yoksa oluştur
+        // First check if badge exists in DB, create if not
         const { data: badgeData, error: badgeError } = await supabase
           .from('badges')
           .select('id')
@@ -123,7 +162,7 @@ export const statsService = {
           continue;
         }
 
-        // Rozet yoksa oluştur
+        // Create badge if it doesn't exist
         if (!badgeData) {
           await supabase
             .from('badges')
@@ -131,11 +170,11 @@ export const statsService = {
               id: badge.id,
               name: badge.name,
               icon: badge.icon,
-              description: `${badge.name} rozetini kazandınız!`
+              description: `You've earned the ${badge.name} badge!`
             });
         }
 
-        // Kullanıcıya rozeti ata
+        // Assign badge to user
         await supabase
           .from('user_badges')
           .insert({
@@ -152,10 +191,10 @@ export const statsService = {
     }
   },
 
-  // Kullanıcı istatistiklerini oluştur
-  createUserStats: async (userId: string) => {
+  // Create user statistics
+  createUserStats: async (userId: string): Promise<UserStats | null> => {
     try {
-      // Yeni bir istatistik kaydı oluştur
+      // Create a new stats record
       const { data, error } = await supabase
         .from('user_stats')
         .insert({
@@ -163,7 +202,9 @@ export const statsService = {
           total_points: 0,
           level: 1,
           rank: 0,
-          visited_places: 0
+          visited_places: 0,
+          checkin_count: 0,
+          cities_visited: 0
         })
         .select()
         .single();
@@ -180,12 +221,12 @@ export const statsService = {
     }
   },
 
-  // Kullanıcının ziyaret ettiği yerlerin sayısını güncelle
+  // Update visited places count
   updateVisitedPlacesCount: async (userId: string) => {
     try {
-      // Ziyaret edilen yerlerin sayısını al
+      // Get count of visited places
       const { count, error: countError } = await supabase
-        .from('visited_places')
+        .from('user_checkins')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', userId);
 
@@ -194,7 +235,7 @@ export const statsService = {
         return false;
       }
 
-      // Kullanıcı istatistiklerini güncelle
+      // Update user stats
       const { error: updateError } = await supabase
         .from('user_stats')
         .update({ visited_places: count || 0 })
@@ -212,11 +253,31 @@ export const statsService = {
     }
   },
 
-  // Liderlik tablosunu getir
+  // Get points history for a user
+  getPointsHistory: async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('points_history')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching points history:', error);
+        return [];
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error('Error in getPointsHistory:', error);
+      return [];
+    }
+  },
+
+  // Get leaderboard
   getLeaderboard: async (limit = 10) => {
     try {
-      // İlişki hatası nedeniyle ayrı sorgular kullanarak veriyi çekelim
-      // İlk olarak kullanıcı istatistiklerini çekelim
+      // First get user stats
       const { data: statsData, error: statsError } = await supabase
         .from('user_stats')
         .select('*')
@@ -228,38 +289,67 @@ export const statsService = {
         return [];
       }
 
-      // Bulunan istatistiklere sahip kullanıcıların bilgilerini çekelim
+      // Get user details for the found stats
       const leaderboard = await Promise.all(
         statsData.map(async (stats) => {
-          const { data: userData, error: userError } = await supabase
-            .from('users')
-            .select('id, username, avatar, email')
-            .eq('id', stats.user_id)
-            .single();
-
-          if (userError) {
-            console.error(`Error fetching user (${stats.user_id}):`, userError);
-            // Kullanıcı bulunamasa bile istatistikleri gösterelim
+          try {
+            // Try to get from profiles table first
+            const { data: profileData, error: profileError } = await supabase
+              .from('profiles')
+              .select('id, username, avatar_url')
+              .eq('user_id', stats.user_id)
+              .maybeSingle();
+              
+            if (!profileError && profileData) {
+              return {
+                id: stats.user_id,
+                username: profileData.username || 'User',
+                avatar: profileData.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(profileData.username || 'User')}&background=random&color=fff&size=256`,
+                level: `Level ${stats.level || 1}`,
+                total_points: stats.total_points || 0
+              };
+            }
+            
+            // Try users table if profile not found
+            const { data: userData, error: userError } = await supabase
+              .from('users')
+              .select('id, username, avatar, email')
+              .eq('id', stats.user_id)
+              .maybeSingle();
+            
+            if (!userError && userData) {
+              return {
+                id: stats.user_id,
+                username: userData.username || userData.email?.split('@')[0] || 'User',
+                avatar: userData.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(userData.username || 'User')}&background=random&color=fff&size=256`,
+                level: `Level ${stats.level || 1}`,
+                total_points: stats.total_points || 0
+              };
+            }
+            
+            // Fall back to generic user if nothing found
             return {
               id: stats.user_id,
-              username: 'Kullanıcı',
+              username: 'User',
               avatar: `https://ui-avatars.com/api/?name=User&background=random&color=fff&size=256`,
-              level: `Seviye ${stats.level || 1}`,
+              level: `Level ${stats.level || 1}`,
+              total_points: stats.total_points || 0
+            };
+          } catch (error) {
+            // Provide a fallback for any unexpected errors
+            console.error(`Error fetching user details for leaderboard (${stats.user_id}):`, error);
+            return {
+              id: stats.user_id,
+              username: 'User',
+              avatar: `https://ui-avatars.com/api/?name=User&background=random&color=fff&size=256`,
+              level: `Level ${stats.level || 1}`,
               total_points: stats.total_points || 0
             };
           }
-
-          return {
-            id: userData.id,
-            username: userData.username || userData.email?.split('@')[0] || 'Kullanıcı',
-            avatar: userData.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(userData.username || 'User')}&background=random&color=fff&size=256`,
-            level: `Seviye ${stats.level || 1}`,
-            total_points: stats.total_points || 0
-          };
         })
       );
 
-      // Eğer liderlik tablosu boşsa, örnek verilerle doldur
+      // If leaderboard is empty, fill with sample data
       if (leaderboard.length === 0) {
         return await statsService.populateLeaderboard();
       }
@@ -271,10 +361,10 @@ export const statsService = {
     }
   },
 
-  // Liderlik tablosunu örnek verilerle doldur
+  // Populate leaderboard with sample data
   populateLeaderboard: async () => {
     try {
-      // Örnek kullanıcılar için veriler
+      // Sample user data
       const demoUsers = [
         { username: 'AdventureSeeker', points: 3560, level: 6 },
         { username: 'WorldExplorer', points: 2890, level: 5 },
@@ -287,7 +377,7 @@ export const statsService = {
         id: `demo-${index}`,
         username: user.username,
         avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(user.username)}&background=random&color=fff&size=256`,
-        level: `Seviye ${user.level}`,
+        level: `Level ${user.level}`,
         total_points: user.points
       }));
 
@@ -295,6 +385,26 @@ export const statsService = {
     } catch (error) {
       console.error('Error in populateLeaderboard:', error);
       return [];
+    }
+  },
+
+  // Update all user stats from check-ins
+  updateUserStatsFromCheckins: async (userId: string) => {
+    try {
+      // Call the Supabase function to update user stats
+      const { error } = await supabase.rpc('update_user_stats_from_checkins', {
+        p_user_id: userId
+      });
+
+      if (error) {
+        console.error('Error updating user stats from check-ins:', error);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error in updateUserStatsFromCheckins:', error);
+      return false;
     }
   }
 };
