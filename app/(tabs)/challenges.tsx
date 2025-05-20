@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useLayoutEffect } from 'react'; // Added useLayoutEffect
 import { StyleSheet, View, ScrollView, TouchableOpacity, Image, Dimensions, ActivityIndicator, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { router } from 'expo-router';
+import { router, useNavigation } from 'expo-router'; // Added useNavigation
 import { FontAwesome5 } from '@expo/vector-icons';
 
 import { ThemedText } from '@/components/ThemedText';
@@ -28,10 +28,18 @@ export default function ChallengesScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const navigation = useNavigation(); // Added
 
   useEffect(() => {
     fetchChallenges();
   }, []);
+
+  // Set header title
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerTitle: 'Görevler',
+    });
+  }, [navigation]);
 
   const fetchChallenges = async () => {
     try {
@@ -132,6 +140,7 @@ export default function ChallengesScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar style="auto" />
+        {/* Header is now managed by navigation options */}
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={THEME.COLORS.primary} />
           <ThemedText style={styles.loadingText}>Görevler Yükleniyor...</ThemedText>
@@ -145,6 +154,7 @@ export default function ChallengesScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar style="auto" />
+        {/* Header is now managed by navigation options */}
         <View style={styles.errorContainer}>
           <FontAwesome5 name="exclamation-circle" size={50} color={THEME.COLORS.error} />
           <ThemedText style={styles.errorText}>{error}</ThemedText>
@@ -159,12 +169,7 @@ export default function ChallengesScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="auto" />
-      
-      {/* Header */}
-      <View style={styles.header}>
-        <ThemedText style={styles.title}>Görevler</ThemedText>
-      </View>
-      
+      {/* Header is now managed by navigation options, remove local header */}
       {/* Categories */}
       <View style={styles.categoriesContainer}>
         <ScrollView 

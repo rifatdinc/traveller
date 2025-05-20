@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Stack, useLocalSearchParams, router } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
+import { socialSharingService } from '@/services/socialSharingService'; // Added
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { challengesService } from '@/services/challengesService';
@@ -23,6 +24,17 @@ export default function ChallengeDetailScreen() {
   const [isJoining, setIsJoining] = useState(false);
   const [hasJoined, setHasJoined] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  const handleShareChallenge = async () => {
+    if (challenge) {
+      const success = await socialSharingService.shareChallenge(challenge);
+      if (!success) {
+        Alert.alert('Hata', 'Görev paylaşılırken bir sorun oluştu.');
+      }
+    } else {
+      Alert.alert('Hata', 'Paylaşılacak görev bilgisi bulunamadı.');
+    }
+  };
 
   useEffect(() => {
     const loadChallengeAndStatus = async () => {
@@ -354,7 +366,7 @@ export default function ChallengeDetailScreen() {
         </View>
       </SafeAreaView>
       
-      <TouchableOpacity style={styles.shareButtonFloat}>
+      <TouchableOpacity style={styles.shareButtonFloat} onPress={handleShareChallenge}>
         <FontAwesome5 name="share-alt" size={20} color={THEME.COLORS.light} />
       </TouchableOpacity>
     </View>

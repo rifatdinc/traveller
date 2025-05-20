@@ -126,6 +126,7 @@ export interface FeedPost {
   comments_count: number;
   created_at: string;
   user?: User;
+  isLiked?: boolean; // Added for UI state
 }
 
 export interface Plan {

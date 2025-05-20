@@ -1,6 +1,6 @@
-import React, { useState, useCallback, useRef } from 'react';
-import { 
-  View, 
+import React, { useState, useCallback, useRef, useLayoutEffect } from 'react'; // Added useLayoutEffect
+import {
+  View,
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
@@ -19,10 +19,11 @@ import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { THEME } from '@/constants/Theme';
-import { router } from 'expo-router';
+import { router, useNavigation } from 'expo-router'; // Added useNavigation
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { getCurrentLocation, searchNearbyPlaces, LocationCoords, NearbyPlace, GOOGLE_API_KEY } from '@/lib/googleMapsService';
+import { searchNearbyPlaces as searchNearbyPlacesGoogle, LocationCoords, NearbyPlace, GOOGLE_API_KEY, createPlaceFromGoogleData } from '@/lib/googleMapsService'; // Renamed and added createPlaceFromGoogleData
+import { useLocation } from '@/contexts/LocationContext'; // Added
 import { Place } from '@/types';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { placesService } from '@/services/placesService';
@@ -68,28 +69,53 @@ const categories: Category[] = [
 ];
 
 export default function ExploreScreen() {
-  const [loading, setLoading] = useState(false);
+  const navigation = useNavigation(); // Added
+  const [loading, setLoading] = useState(true); // Start with loading true
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [currentLocation, setCurrentLocation] = useState<LocationCoords | null>(null);
+  const {
+    city: userCity,
+    latitude: userLatitude,
+    longitude: userLongitude,
+    loading: locationLoading,
+    error: locationError,
+    fetchLocation
+  } = useLocation();
   const [places, setPlaces] = useState<NearbyPlace[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [showMap, setShowMap] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const mapRef = useRef(null);
+  const mapRef = useRef<MapView>(null);
   const scrollY = useSharedValue(0);
   const lastContentOffset = useSharedValue(0);
   const isScrolling = useSharedValue(false);
 
-  // Load data when screen is focused
+  // Set header title dynamically
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerTitle: userCity ? `Keşfet: ${userCity}` : 'Keşfet',
+    });
+  }, [navigation, userCity]);
+
+  // Load data when screen is focused or location changes
   useFocusEffect(
     useCallback(() => {
-      loadInitialData();
+      if (userLatitude && userLongitude) {
+        loadInitialData(userLatitude, userLongitude);
+        if (!searchQuery && userCity) { // Optional: Pre-fill search query with userCity
+          // setSearchQuery(userCity); // Decided against pre-filling to keep search explicit
+        }
+      } else if (locationError) {
+        setError(`Konum bilgisi alınamadı: ${locationError}. Lütfen konum servislerinizi kontrol edin veya daha sonra tekrar deneyin.`);
+        setLoading(false); // Stop loading if location error
+      } else if (locationLoading) {
+        setLoading(true); // Ensure loading is true while location is being fetched
+      }
       return () => {
         // Cleanup if needed
       };
-    }, [])
+    }, [userLatitude, userLongitude, locationError, userCity, locationLoading])
   );
 
   // Animated header style
@@ -126,19 +152,19 @@ export default function ExploreScreen() {
     },
   });
 
-  const loadInitialData = async () => {
+  const loadInitialData = async (lat: number, lng: number) => {
+    if (!lat || !lng) {
+      setError('Geçerli konum bilgisi bulunamadı.');
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
-    
     try {
-      const location = await getCurrentLocation();
-      if (location) {
-        setCurrentLocation(location);
-        await fetchNearbyPlaces(location);
-      }
+      await fetchNearbyPlaces({ latitude: lat, longitude: lng });
     } catch (err) {
-      console.error('Error loading initial data:', err);
-      setError('Veriler yüklenirken bir sorun oluştu');
+      console.error('Error loading initial data in ExploreScreen:', err);
+      setError(err instanceof Error ? `Veri yükleme hatası: ${err.message}` : 'Veriler yüklenirken bilinmeyen bir sorun oluştu.');
     } finally {
       setLoading(false);
     }

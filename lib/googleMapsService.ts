@@ -102,6 +102,47 @@ export async function getCurrentLocation(): Promise<LocationCoords | null> {
   }
 }
 
+// Add this to your imports is already handled as axios is imported at the top
+// ... (other functions like getCurrentLocation, searchNearbyPlaces, etc.)
+
+export async function reverseGeocode(latitude: number, longitude: number): Promise<string | null> {
+  if (!GOOGLE_API_KEY) {
+    console.error('Google API Key is not configured.');
+    return null;
+  }
+  const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${GOOGLE_API_KEY}&language=tr`;
+  try {
+    const response = await axios.get(url);
+    if (response.data.status === 'OK' && response.data.results.length > 0) {
+      const results = response.data.results;
+      // Look for 'locality' or 'administrative_area_level_1' for city
+      for (const result of results) {
+        for (const component of result.address_components) {
+          if (component.types.includes('locality') || component.types.includes('administrative_area_level_1')) {
+            return component.long_name;
+          }
+        }
+      }
+      // Fallback if specific components not found, try a broader one or return null
+      if (results[0]?.address_components?.length > 0) {
+        // Attempt to find a suitable component or default to a broader area
+        const cityComponent = results[0].address_components.find(
+          (c: any) => c.types.includes('administrative_area_level_2') || c.types.includes('postal_town')
+        );
+        if (cityComponent) return cityComponent.long_name;
+      }
+      console.warn('City not found in reverse geocode response for:', latitude, longitude);
+      return null;
+    } else {
+      console.error('Reverse geocoding failed:', response.data.status, response.data.error_message);
+      return null;
+    }
+  } catch (error) {
+    console.error('Error during reverse geocoding request:', error);
+    return null;
+  }
+}
+
 // Belirli bir konumun çevresindeki yerleri arama
 export async function searchNearbyPlaces(location: LocationCoords, radius = 5000, type?: string): Promise<NearbyPlace[]> {
   try {

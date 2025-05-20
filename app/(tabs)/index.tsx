@@ -1,8 +1,8 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useLayoutEffect } from 'react'; // Added useLayoutEffect
 import { StyleSheet, ScrollView, View, TouchableOpacity, FlatList, ActivityIndicator, Alert, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { router } from 'expo-router';
+import { router, useNavigation } from 'expo-router'; // Added useNavigation
 import { FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -10,7 +10,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { THEME } from '@/constants/Theme';
-import { feedService } from '@/services/feedService';
+// import { feedService } from '@/services/feedService'; // Removed
+import { socialSharingService } from '@/services/socialSharingService'; // Added
 import { challengesService } from '@/services/challengesService';
 import { placesService } from '@/services/placesService';
 import { userService } from '@/services/userService';
@@ -20,149 +21,173 @@ import {
   getCurrentLocation,
   searchNearbyPlaces, 
   getPlacePhoto,
-  NearbyPlace, 
-  createPlaceFromGoogleData
+  NearbyPlace,
+  // createPlaceFromGoogleData, // Commented out as it's not used directly in the new flow for challenges
+  getPlacePhoto, // Keep if used for nearby places display
+  searchNearbyPlaces as searchNearbyPlacesGoogle // Renaming to avoid conflict if we keep a local version
 } from '@/lib/googleMapsService';
+import { useLocation } from '@/contexts/LocationContext'; // Added
 
 export default function HomeScreen() {
+  const navigation = useNavigation(); // Added
   const [loading, setLoading] = useState<boolean>(true);
+  const { city: userCity, latitude: userLatitude, longitude: userLongitude, loading: locationLoading, error: locationError, fetchLocation } = useLocation(); // Added
   const [user, setUser] = useState<User | null>(null);
-  const [places, setPlaces] = useState<Place[]>([]);
-  const [nearbyPlaces, setNearbyPlaces] = useState<NearbyPlace[]>([]);
-  const [loadingNearby, setLoadingNearby] = useState<boolean>(true);
-  const [location, setLocation] = useState<{latitude: number; longitude: number} | null>(null);
+  const [places, setPlaces] = useState<Place[]>([]); // General places
+  const [nearbyPlaces, setNearbyPlaces] = useState<NearbyPlace[]>([]); // For "Yakınındaki Yerler" section
+  const [loadingNearby, setLoadingNearby] = useState<boolean>(false); // Initialize to false or true based on when fetchNearbyPlacesForDisplay is called
+  // const [location, setLocation] = useState<{latitude: number; longitude: number} | null>(null); // Removed
   const [dailyChallenge, setDailyChallenge] = useState<Challenge | null>(null);
-  const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [challenges, setChallenges] = useState<Challenge[]>([]); // General + Location-based challenges
   const [feedPosts, setFeedPosts] = useState<FeedPost[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [mockChallengeUsed, setMockChallengeUsed] = useState<boolean>(false);
 
-  // Kullanıcının konumunu al
-  const getUserLocation = async () => {
-    try {
-      const currentLocation = await getCurrentLocation();
-      if (currentLocation) {
-        setLocation(currentLocation);
-        // Konumu aldıktan sonra yakındaki yerleri ara
-        fetchNearbyPlaces(currentLocation);
-      }
-    } catch (err) {
-      console.error('Konum alırken hata:', err);
-      // Konum alınamazsa, yedek olarak Supabase'den yerler gösterilecek
+  // This function is now specifically for fetching nearby places for the "Yakınındaki Yerler" section
+  // It no longer extracts city or fetches location-based challenges.
+  const fetchNearbyPlacesForDisplay = async (currentLatitude: number, currentLongitude: number) => {
+    if (!currentLatitude || !currentLongitude) {
+      setLoadingNearby(false);
+      return;
     }
-  };
-
-  // Yakındaki yerleri Google Places API ile ara
-  const fetchNearbyPlaces = async (userLocation: { latitude: number; longitude: number }) => {
     try {
       setLoadingNearby(true);
-      
-      // Progressive search with expanding radius
-      const searchRadii = [1000, 5000, 10000, 20000, 50000]; // Meters
-      let nearbyResults = null;
+      const searchRadii = [1000, 5000, 10000, 20000, 50000];
+      let nearbyResults: NearbyPlace[] | null = null;
       let usedRadius = 0;
-      
-      // Try with progressively larger radius until we find something
+
       for (const radius of searchRadii) {
-        console.log(`[fetchNearbyPlaces] Searching within ${radius}m radius...`);
-        nearbyResults = await searchNearbyPlaces(userLocation, radius);
-        
-        if (nearbyResults && nearbyResults.length > 0) {
-          console.log(`[fetchNearbyPlaces] Found ${nearbyResults.length} results at ${radius}m radius`);
+        console.log(`[fetchNearbyPlacesForDisplay] Searching within ${radius}m radius...`);
+        // Assuming searchNearbyPlacesGoogle is the imported Google Maps service function
+        const results = await searchNearbyPlacesGoogle({ latitude: currentLatitude, longitude: currentLongitude }, radius);
+        if (results && results.length > 0) {
+          console.log(`[fetchNearbyPlacesForDisplay] Found ${results.length} results at ${radius}m radius`);
+          nearbyResults = results;
           usedRadius = radius;
           break;
         }
       }
-      
+
       if (!nearbyResults || nearbyResults.length === 0) {
-        console.log('[fetchNearbyPlaces] No results found even at largest radius.');
-        setNearbyPlaces([]); // No results found
+        console.log('[fetchNearbyPlacesForDisplay] No results found even at largest radius.');
+        setNearbyPlaces([]);
       } else {
-        console.log(`[fetchNearbyPlaces] Found ${nearbyResults.length} results at ${usedRadius}m.`);
-        setNearbyPlaces(nearbyResults.slice(0, 5)); // Sadece ilk 5 sonucu göster
-        
-        // Yakındaki ilk yerden şehir bilgisini çıkarıp buna göre challenge getir
-        if (nearbyResults.length > 0 && nearbyResults[0].vicinity) {
-          const city = extractCityFromVicinity(nearbyResults[0].vicinity);
-          if (city) {
-            // Veritabanında kullanmak için yerleri ekle
-            const placesToAdd = nearbyResults.slice(0, 5); // İlk 5 yeri ekle
-            for (const place of placesToAdd) {
-              try {
-                // Using the outer savePlaceToDatabase function
-                await createPlaceFromGoogleData(place, city);
-              } catch (err) {
-                console.error(`Error saving place ${place.name} to database:`, err);
-              }
-            }
-            
-            // Konum bazlı görevleri getir
-            fetchLocationBasedChallenges(city);
-          }
-        }
+        console.log(`[fetchNearbyPlacesForDisplay] Found ${nearbyResults.length} results at ${usedRadius}m.`);
+        setNearbyPlaces(nearbyResults.slice(0, 5));
+        // City extraction and challenge fetching is removed from here.
+        // Saving places to DB can still happen if desired, but will need userCity from context for the 'city' field.
+        // For now, removing the createPlaceFromGoogleData loop to simplify. It can be added back if needed.
       }
     } catch (err) {
-      // Log the specific error, check if it's ZERO_RESULTS
       if (err instanceof Error && err.message.includes('ZERO_RESULTS')) {
-        console.warn('[fetchNearbyPlaces] Google Places API returned ZERO_RESULTS. Falling back to Supabase data if available.');
+        console.warn('[fetchNearbyPlacesForDisplay] Google Places API returned ZERO_RESULTS.');
       } else {
-        console.error('[fetchNearbyPlaces] Error searching nearby places:', err);
+        console.error('[fetchNearbyPlacesForDisplay] Error searching nearby places:', err);
       }
-      setNearbyPlaces([]); // Hata durumunda da boşalt
+      setNearbyPlaces([]);
     } finally {
       setLoadingNearby(false);
     }
   };
 
-  const loadData = async () => {
+  const loadInitialData = async () => {
     try {
       setLoading(true);
+      setError(null);
       
-      // Tüm verileri paralel olarak yükle
-      const [userData, placesData, challengesData, dailyChallengeData, feedPostsData] = await Promise.all([
+      // Fetch user, general places, general challenges, general daily challenge, feed posts
+      // Location-based challenges will be fetched in an effect hook based on userCity
+      const [userData, generalPlacesData, generalChallengesData, generalDailyChallengeData, socialFeedPostsData] = await Promise.all([
         userService.getCurrentUser(),
-        placesService.getAllPlaces(),
-        challengesService.getAllChallenges(),
-        challengesService.getDailyChallenge(),
-        feedService.getAllPosts()
+        placesService.getAllPlaces(), // These are general places, or could be filtered later
+        challengesService.getAllChallenges(), // General challenges
+        challengesService.getDailyChallenge(), // General daily challenge
+        socialSharingService.getFeedPosts() // Changed to socialSharingService
       ]);
       
       setUser(userData);
-      setPlaces(placesData || []);
-      setChallenges(challengesData || []);
+      setPlaces(generalPlacesData || []);
+      setChallenges(generalChallengesData || []);
       
-      // Günün görevi için veri yoksa default veri kullan
-      if (dailyChallengeData) {
-        setDailyChallenge(dailyChallengeData);
+      if (generalDailyChallengeData) {
+        setDailyChallenge(generalDailyChallengeData);
         setMockChallengeUsed(false);
       } else {
-        console.log('No daily challenge from API, using default data');
-        // API'den veri yoksa varsayılan bir challenge oluştur
-        const defaultChallenge = {
+        console.log('No general daily challenge from API, using default data');
+        const defaultChallenge = { // This might be overridden by a location-specific one later
           id: 'default-challenge-1',
-          title: 'İstanbul Keşif Rotası',
-          description: 'İstanbul\'un en popüler 3 turistik noktasını ziyaret edin ve fotoğraf paylaşın.',
+          title: 'Şehir Kaşifi Ol',
+          description: 'Bulunduğun şehirdeki en az 3 önemli noktayı ziyaret et ve deneyimlerini paylaş.',
           points: 500,
-          image_url: 'https://images.unsplash.com/photo-1524231757912-21f4fe3a7200',
+          image_url: 'https://images.unsplash.com/photo-1524231757912-21f4fe3a7200', // Generic image
           deadline: '3 gün',
           challenge_type: 'general' as 'general',
           category: 'general' as 'general',
         };
-        
         setDailyChallenge(defaultChallenge);
         setMockChallengeUsed(true);
       }
       
-      // FeedPost tipi uyumsuzluğunu çözmek için tip dönüşümü
-      if (feedPostsData) {
-        setFeedPosts(feedPostsData as any);
+      if (socialFeedPostsData) {
+        if (user && user.id) { // Check if user is available for fetching liked statuses
+          const postsWithLikedStatus = await Promise.all(
+            socialFeedPostsData.map(async (post) => {
+              const isLiked = await socialSharingService.hasUserLikedPost(user.id, post.id);
+              return {
+                id: post.id,
+                user: {
+                  id: post.user_id,
+                  username: post.username || 'Anonim',
+                  avatar_url: post.user_avatar || 'https://randomuser.me/api/portraits/men/1.jpg',
+                  level: '', 
+                  total_points: 0,
+                },
+                location: post.place_name || post.place_city || undefined,
+                created_at: post.created_at,
+                image_url: post.images && post.images.length > 0 ? post.images[0] : undefined,
+                content: post.content,
+                likes_count: post.likes_count || 0,
+                comments_count: post.comments_count || 0,
+                place_id: post.place_id,
+                isLiked: isLiked, // Set initial liked status
+              };
+            })
+          );
+          setFeedPosts(postsWithLikedStatus);
+        } else {
+          // If user is not logged in, set posts without liked status
+          const transformedFeedPosts = socialFeedPostsData.map(post => ({
+            id: post.id,
+            user: {
+              id: post.user_id,
+              username: post.username || 'Anonim',
+              avatar_url: post.user_avatar || 'https://randomuser.me/api/portraits/men/1.jpg',
+              level: '',
+              total_points: 0,
+            },
+            location: post.place_name || post.place_city || undefined,
+            created_at: post.created_at,
+            image_url: post.images && post.images.length > 0 ? post.images[0] : undefined,
+            content: post.content,
+            likes_count: post.likes_count || 0,
+            comments_count: post.comments_count || 0,
+            place_id: post.place_id,
+            isLiked: false, // Default to false if no user
+          }));
+          setFeedPosts(transformedFeedPosts);
+        }
       }
-      
-      // Konum ve yakın yerleri yükle
-      getUserLocation();
+
+      // Fetch nearby places for the "Yakınındaki Yerler" section using context coordinates
+      if (userLatitude && userLongitude) {
+        fetchNearbyPlacesForDisplay(userLatitude, userLongitude);
+      } else if (!locationLoading) { // If not loading and no coords, maybe set nearby loading to false
+        setLoadingNearby(false);
+      }
+
     } catch (err) {
-      console.error('Veri yükleme hatası:', err);
+      console.error('Initial data loading error:', err);
       setError('Veriler yüklenirken bir hata oluştu. Lütfen tekrar deneyin.');
     } finally {
       setLoading(false);
@@ -170,46 +195,88 @@ export default function HomeScreen() {
   };
   
   useEffect(() => {
-    loadData();
+    loadInitialData();
   }, []);
+
+  // Effect to fetch location-based challenges when city is available
+  useEffect(() => {
+    if (userCity) {
+      console.log(`City detected: ${userCity}. Fetching location-based challenges.`);
+      fetchLocationBasedChallenges(userCity);
+    } else if (locationError) {
+      console.warn('Could not fetch location-based challenges due to location error:', locationError);
+      // If there's a location error, and we have a mock challenge, we might want to ensure
+      // that a general (non-mock) daily challenge is loaded if not already, or the mock persists.
+      // loadInitialData already sets a mock or general challenge, so this might be okay.
+    }
+    // Also, re-fetch nearby places if user coordinates become available after initial load
+    if (userLatitude && userLongitude && nearbyPlaces.length === 0 && !loadingNearby && !locationLoading) {
+      console.log('User coordinates available, fetching nearby places for display.');
+      fetchNearbyPlacesForDisplay(userLatitude, userLongitude);
+    }
+
+  }, [userCity, userLatitude, userLongitude, locationError, locationLoading]);
+
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadData();
+    await fetchLocation(); // Refresh location from context
+    await loadInitialData(); // Reload other data
+    // Location-based challenges will be re-fetched by the useEffect watching userCity
     setRefreshing(false);
   }, []);
 
-  // Adres bilgisinden şehir adını çıkarmak için yardımcı fonksiyon
-  const extractCityFromVicinity = (vicinity: string): string | null => {
-    if (!vicinity) return null;
-    
-    // Turkish cities list to help with identification
-    const turkishCities = [
-      'İstanbul', 'Ankara', 'İzmir', 'Bursa', 'Adana', 'Gaziantep', 'Konya', 
-      'Antalya', 'Kayseri', 'Mersin', 'Eskişehir', 'Diyarbakır', 'Şanlıurfa',
-      'Samsun', 'Malatya', 'Gebze', 'Denizli', 'Sivas', 'Erzurum', 'Tokat',
-      'Hatay', 'Manisa', 'Batman', 'Kahramanmaraş', 'Van', 'Elazığ', 'Tekirdağ',
-      'Adapazarı', 'Kocaeli', 'İzmit'  // Adding İzmit explicitly for the current case
-    ];
-    
-    // First, check if any city name is directly in the vicinity string
-    for (const city of turkishCities) {
-      if (vicinity.includes(city)) {
-        return city;
-      }
+  // Set header title
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerTitle: 'Ana Sayfa',
+    });
+  }, [navigation]);
+
+  const newHandleLikePress = async (postId: string) => {
+    if (!user || !user.id) {
+      Alert.alert("Giriş Yapın", "Beğeni yapmak için giriş yapmalısınız.");
+      return;
     }
+    const userId = user.id;
+
+    // 1. Check current liked status (or use the isLiked from state)
+    const postIndex = feedPosts.findIndex(p => p.id === postId);
+    if (postIndex === -1) return;
     
-    // Örnek: "Beyoğlu, İstanbul" -> "İstanbul"
-    // Örnek: "Taksim Meydanı, İstanbul" -> "İstanbul"
-    const parts = vicinity.split(',');
-    if (parts.length > 1) {
-      // Take the last part, which is often the city
-      const lastPart = parts[parts.length - 1].trim();
-      return lastPart;
+    const currentlyLiked = feedPosts[postIndex].isLiked || false;
+    
+    // Optimistic UI update
+    const originalFeedPosts = JSON.parse(JSON.stringify(feedPosts)); // Deep copy
+    setFeedPosts(prevPosts =>
+      prevPosts.map(p => {
+        if (p.id === postId) {
+          return {
+            ...p,
+            likes_count: currentlyLiked ? Math.max(0, p.likes_count - 1) : p.likes_count + 1,
+            isLiked: !currentlyLiked, // Toggle liked status
+          };
+        }
+        return p;
+      })
+    );
+  
+    // 2. Perform action
+    try {
+      const success = currentlyLiked 
+        ? await socialSharingService.unlikePost(userId, postId)
+        : await socialSharingService.likePost(userId, postId);
+  
+      if (!success) {
+        setFeedPosts(originalFeedPosts); // Revert
+        Alert.alert("Hata", "İşlem başarısız oldu.");
+      } 
+      // No need to do anything else on success as UI is already updated optimistically
+    } catch (error) {
+      console.error("Error during like/unlike:", error);
+      setFeedPosts(originalFeedPosts); // Revert
+      Alert.alert("Hata", "Bir sorun oluştu.");
     }
-    
-    // If we couldn't identify a city, return the whole string or a default
-    return vicinity.trim();
   };
 
   // Konum bazlı görevleri getir
@@ -218,32 +285,38 @@ export default function HomeScreen() {
       console.log(`[fetchLocationBasedChallenges] Fetching challenges for ${city}`);
       const locationChallenges = await locationChallengeService.getLocationBasedChallenges(city);
       
-      if (locationChallenges && locationChallenges.length > 0) {
+      if (locationChallenges && locationChallenges.length > 0) { // City specific challenges found
         console.log(`[fetchLocationBasedChallenges] Found ${locationChallenges.length} challenges for ${city}`);
         
-        // Eğer günün görevi yoksa, ilk lokasyon challenge'ını günün görevi olarak ayarla
-        if (!dailyChallenge || mockChallengeUsed) {
+        // Prioritize location-based challenge as daily challenge
+        // If no daily challenge yet, or if current one is a mock, or if we always prefer location one.
+        // Also check if the current daily challenge is already for this city.
+        const currentDailyChallengeIsForThisCity = dailyChallenge && dailyChallenge.location === city && !mockChallengeUsed;
+
+        if (!dailyChallenge || mockChallengeUsed || !currentDailyChallengeIsForThisCity) {
           setDailyChallenge(locationChallenges[0]);
-          setMockChallengeUsed(false);
-          console.log(`[fetchLocationBasedChallenges] Set daily challenge to "${locationChallenges[0].title}"`);
+          setMockChallengeUsed(false); // It's a real, location-based challenge now
+          console.log(`[fetchLocationBasedChallenges] Set daily challenge to "${locationChallenges[0].title}" from ${city}`);
         }
         
-        // Genel görevleri güncelle
+        // Update the main challenges list, avoiding duplicates
         setChallenges(prev => {
-          // Yeni görevleri ekleyip tekrarları önle (id'ye göre)
           const existingIds = new Set(prev.map(c => c.id));
           const newChallenges = locationChallenges.filter(c => !existingIds.has(c.id));
           return [...prev, ...newChallenges];
         });
       } else {
-        console.log(`[fetchLocationBasedChallenges] No challenges found for ${city}, but default challenges should have been created`);
+        console.log(`[fetchLocationBasedChallenges] No specific challenges found for ${city}. Current daily challenge: ${dailyChallenge?.title}`);
+        // If no location-specific challenges are found, and the current dailyChallenge was a mock one,
+        // loadInitialData would have set a general or new mock one.
+        // If a general non-mock daily challenge exists, it will persist.
       }
     } catch (error) {
       console.error(`[fetchLocationBasedChallenges] Error fetching challenges for ${city}:`, error);
     }
   };
 
-  if (loading) {
+  if (loading || (locationLoading && !userCity && !locationError)) { // Show loading if initial data or location is still loading
     return (
       <SafeAreaView style={[styles.container, styles.loadingContainer]} edges={['right', 'left']}>
         <ActivityIndicator size="large" color={THEME.COLORS.primary} />
@@ -261,7 +334,8 @@ export default function HomeScreen() {
           style={styles.retryButton}
           onPress={() => {
             setError(null);
-            loadData();
+            fetchLocation(); // Attempt to refetch location
+            loadInitialData(); // Reload other data
           }}
         >
           <ThemedText style={styles.retryButtonText}>Tekrar Dene</ThemedText>
@@ -276,7 +350,7 @@ export default function HomeScreen() {
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <ThemedText style={styles.greeting}>Merhaba, {user?.username || 'Gezgin'}</ThemedText>
+          <ThemedText style={styles.greeting}>Merhaba, {user?.username || 'Gezgin'} {userCity ? `(${userCity})` : ''}</ThemedText>
           <View style={styles.pointsContainer}>
             <ThemedText style={{ color: THEME.COLORS.accent }}>
               <FontAwesome5 name="star" size={16} />
@@ -649,8 +723,13 @@ export default function HomeScreen() {
                 <ThemedText style={styles.storyDescription}>{post.content}</ThemedText>
 
                 <View style={styles.storyActions}>
-                  <TouchableOpacity style={styles.storyAction}>
-                    <FontAwesome5 name="heart" size={16} color={THEME.COLORS.gray} />
+                  <TouchableOpacity style={styles.storyAction} onPress={() => newHandleLikePress(post.id)}>
+                    <FontAwesome5 
+                      name="heart" 
+                      size={16} 
+                      color={post.isLiked ? THEME.COLORS.accent : THEME.COLORS.gray} 
+                      solid={post.isLiked} // Use solid heart icon if liked
+                    />
                     <ThemedText style={styles.storyActionText}>{post.likes_count || 0}</ThemedText>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.storyAction}>

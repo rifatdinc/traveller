@@ -371,5 +371,29 @@ export const socialSharingService = {
       console.error('Error in getPostComments:', error);
       return [];
     }
-  }
+  },
+
+  shareChallenge: async (challenge: import('@/types').Challenge): Promise<boolean> => {
+    try {
+      const message = `Bu harika göreve göz atın: "${challenge.title}"! 
+
+${challenge.description}
+
+#TravelPoints #${challenge.category || 'Keşfet'}`;
+      const url = Platform.OS === 'ios' 
+        ? `travelpoints://challenge/${challenge.id}` 
+        : `https://travelpoints.app/challenge/${challenge.id}`; // Fallback URL for Android or web if deep links aren't fully set up
+
+      await Share.share({
+        message,
+        url, // URL to the content
+        title: `TravelPoints Görevi: ${challenge.title}` // Title of the content
+      });
+      return true;
+    } catch (error) {
+      console.error('Error sharing challenge:', error);
+      // Alert.alert('Hata', 'Görev paylaşılırken bir sorun oluştu.'); // Optionally handle error in UI
+      return false;
+    }
+  },
 };
