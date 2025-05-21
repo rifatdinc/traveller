@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react'; // Added useLayoutEffect
 import { StyleSheet, View, ScrollView, Image, TextInput, Dimensions, ActivityIndicator, Text, Pressable, Alert, Modal, TouchableOpacity, FlatList, RefreshControl } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -13,7 +13,7 @@ import { HapticTab } from '@/components/HapticTab';
 import { plannerService } from '@/services/plannerService';
 import { placesService } from '@/services/placesService';
 import { useAuth } from '@/hooks/useAuth';
-import { router } from 'expo-router';
+import { router, useNavigation } from 'expo-router'; // Added useNavigation
 import { PlaceSelectionModal } from '@/app/components/PlaceSelectionModal';
 
 // Arayüzler
@@ -74,6 +74,7 @@ const CARD_WIDTH = width - 40;
 export default function PlannerScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const navigation = useNavigation(); // Added
   const [activeFilter, setActiveFilter] = useState('all');
   const [destination, setDestination] = useState('');
   const [budget, setBudget] = useState('');
@@ -125,6 +126,13 @@ export default function PlannerScreen() {
       }
     }, 500)
   ).current;
+
+  // Set header title
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerTitle: 'Seyahat Planlarım',
+    });
+  }, [navigation]);
 
   // Destinasyon değiştiğinde arama yap
   const handleDestinationChange = (text: string) => {
@@ -475,12 +483,7 @@ export default function PlannerScreen() {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar style="auto" />
-      
-      {/* Header */}
-      <View style={styles.header}>
-        <ThemedText style={styles.title}>Gezi Planlayıcı</ThemedText>
-      </View>
-      
+      {/* Header is now managed by navigation options, remove local header */}
       <ScrollView 
         showsVerticalScrollIndicator={false} 
         contentContainerStyle={{ paddingBottom: 100 }}

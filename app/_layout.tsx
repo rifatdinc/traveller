@@ -8,6 +8,7 @@ import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { AuthProvider } from '@/hooks/useAuth';
+import { LocationProvider } from '@/contexts/LocationContext';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -30,9 +31,10 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <Stack
-          screenOptions={{
+      <LocationProvider>
+        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+          <Stack
+            screenOptions={{
             headerStyle: {
               backgroundColor: colorScheme === 'dark' ? '#1A1A1A' : '#F2F2F2',
             },
@@ -49,7 +51,7 @@ export default function RootLayout() {
           <Stack.Screen 
             name="(tabs)" 
             options={{
-              headerTitle: 'Travel Points',
+              headerShown: false, // Hide the stack header for (tabs), as tabs will have their own
             }} 
           />
           <Stack.Screen 
@@ -67,6 +69,7 @@ export default function RootLayout() {
         </Stack>
         <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
       </ThemeProvider>
+      </LocationProvider>
     </AuthProvider>
   );
 }

@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useLayoutEffect } from 'react'; // Added useLayoutEffect
 import { StyleSheet, View, ScrollView, TouchableOpacity, Image, Dimensions, ActivityIndicator, Alert, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView, } from 'react-native-gesture-handler';
-import { router } from 'expo-router';
+import { router, useNavigation } from 'expo-router'; // Added useNavigation
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
@@ -91,6 +91,7 @@ const tabs = [
 
 export default function ProfileScreen() {
   const { user, signOut } = useAuth();
+  const navigation = useNavigation(); // Added
   const [activeTab, setActiveTab] = useState('stats');
   const [loading, setLoading] = useState(true);
   const [userData, setUserData] = useState<UserData | null>(null);
@@ -102,6 +103,13 @@ export default function ProfileScreen() {
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [userPlans, setUserPlans] = useState<TripPlan[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Set header title
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerTitle: 'Profilim',
+    });
+  }, [navigation]);
 
   useEffect(() => {
     if (user) {
