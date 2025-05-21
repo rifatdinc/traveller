@@ -91,7 +91,8 @@ export interface ChallengeRequirement {
   type: 'visit_place' | 'take_photo' | 'check_in' | 'post_content' | 'visit_category' | 'rate_place' | 'custom';
   target_id?: string; // If the requirement targets a specific place, category, etc.
   count?: number; // Required count for completion
-  is_completed?: boolean;
+  is_completed?: boolean; // User-specific progress
+  current_count?: number; // User-specific progress
 }
 
 export interface UserChallenge {

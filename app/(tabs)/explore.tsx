@@ -12,7 +12,9 @@ import {
   Platform,
   LayoutAnimation,
   UIManager,
-  Linking
+  Linking,
+  Share, // Added Share
+  Alert // Added Alert for error handling
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { ThemedText } from '@/components/ThemedText';
@@ -268,6 +270,30 @@ export default function ExploreScreen() {
 
   const filteredAndSearchedPlaces = searchPlaces(filterPlaces());
 
+  const handleSharePlace = async (place: NearbyPlace) => {
+    try {
+      const result = await Share.share({
+        message: `Check out this place: ${place.name}. Find it here: https://www.google.com/maps?q=${place.geometry.location.lat},${place.geometry.location.lng} (Shared via TravelPoints App)`,
+        title: `Share ${place.name}`, // Optional, for some platforms
+      });
+      if (result.action === Share.sharedAction) {
+        if (result.activityType) {
+          // shared with activity type of result.activityType
+          console.log('Shared with activity type:', result.activityType);
+        } else {
+          // shared
+          console.log('Shared successfully');
+        }
+      } else if (result.action === Share.dismissedAction) {
+        // dismissed
+        console.log('Share dismissed');
+      }
+    } catch (error: any) {
+      Alert.alert('Error', 'Failed to share place.');
+      console.error('Error sharing place:', error.message);
+    }
+  };
+
   const PlaceCard = useCallback(({ place, onPress, style }: PlaceCardProps) => {
     const cardAnimatedStyle = useAnimatedStyle(() => ({
       transform: [{ scale: withSpring(1) }],
@@ -342,7 +368,10 @@ export default function ExploreScreen() {
                   <FontAwesome5 name="directions" size={16} color={THEME.COLORS.white} />
                   <ThemedText style={styles.actionButtonText}>Yol Tarifi</ThemedText>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.actionButton}>
+                <TouchableOpacity 
+                  style={styles.actionButton}
+                  onPress={() => handleSharePlace(place)} // Updated
+                >
                   <FontAwesome5 name="share-alt" size={16} color={THEME.COLORS.white} />
                   <ThemedText style={styles.actionButtonText}>Paylaş</ThemedText>
                 </TouchableOpacity>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { StyleSheet, ScrollView, View, TouchableOpacity, FlatList, ActivityIndicator, Alert, RefreshControl } from 'react-native';
+import { StyleSheet, ScrollView, View, TouchableOpacity, FlatList, ActivityIndicator, Alert, RefreshControl, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { router } from 'expo-router';
@@ -20,15 +20,27 @@ import {
   getCurrentLocation,
   searchNearbyPlaces, 
   getPlacePhoto,
-  NearbyPlace, 
-  createPlaceFromGoogleData
+  NearbyPlace,
+  createPlaceFromGoogleData,
+  // Ensure Place type from googleMapsService is compatible or use a specific SupabasePlace type
 } from '@/lib/googleMapsService';
+import { 
+  addFavoritePlace, 
+  removeFavoritePlace, 
+  getUserFavoritePlaceIds 
+} from '@/services/favoritesService'; 
+import {
+  addBookmarkedChallenge,
+  removeBookmarkedChallenge,
+  getUserBookmarkedChallengeIds,
+} from '@/services/bookmarkService'; // Import bookmark services
+// import Toast from 'react-native-toast-message'; // Optional: for user feedback
 
 export default function HomeScreen() {
   const [loading, setLoading] = useState<boolean>(true);
   const [user, setUser] = useState<User | null>(null);
-  const [places, setPlaces] = useState<Place[]>([]);
-  const [nearbyPlaces, setNearbyPlaces] = useState<NearbyPlace[]>([]);
+  const [places, setPlaces] = useState<Place[]>([]); // Fallback places from Supabase
+  const [nearbyPlaces, setNearbyPlaces] = useState<Place[]>([]); // Unified to use Place type from Supabase
   const [loadingNearby, setLoadingNearby] = useState<boolean>(true);
   const [location, setLocation] = useState<{latitude: number; longitude: number} | null>(null);
   const [dailyChallenge, setDailyChallenge] = useState<Challenge | null>(null);
@@ -37,6 +49,11 @@ export default function HomeScreen() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [mockChallengeUsed, setMockChallengeUsed] = useState<boolean>(false);
+  const [favoritePlaceIds, setFavoritePlaceIds] = useState<string[]>([]);
+  const [favoriteLoading, setFavoriteLoading] = useState<Record<string, boolean>>({});
+  const [bookmarkedChallengeIds, setBookmarkedChallengeIds] = useState<string[]>([]);
+  const [bookmarkLoading, setBookmarkLoading] = useState<Record<string, boolean>>({});
+
 
   // Kullanıcının konumunu al
   const getUserLocation = async () => {
@@ -44,123 +61,127 @@ export default function HomeScreen() {
       const currentLocation = await getCurrentLocation();
       if (currentLocation) {
         setLocation(currentLocation);
-        // Konumu aldıktan sonra yakındaki yerleri ara
         fetchNearbyPlaces(currentLocation);
       }
     } catch (err) {
       console.error('Konum alırken hata:', err);
-      // Konum alınamazsa, yedek olarak Supabase'den yerler gösterilecek
     }
   };
 
-  // Yakındaki yerleri Google Places API ile ara
+  // Yakındaki yerleri Google Places API ile ara ve Supabase'e kaydet
   const fetchNearbyPlaces = async (userLocation: { latitude: number; longitude: number }) => {
     try {
       setLoadingNearby(true);
-      
-      // Progressive search with expanding radius
-      const searchRadii = [1000, 5000, 10000, 20000, 50000]; // Meters
-      let nearbyResults = null;
+      const searchRadii = [1000, 5000, 10000, 20000, 50000];
+      let googleNearbyResults: NearbyPlace[] = []; // Type from googleMapsService
       let usedRadius = 0;
-      
-      // Try with progressively larger radius until we find something
+
       for (const radius of searchRadii) {
         console.log(`[fetchNearbyPlaces] Searching within ${radius}m radius...`);
-        nearbyResults = await searchNearbyPlaces(userLocation, radius);
-        
-        if (nearbyResults && nearbyResults.length > 0) {
-          console.log(`[fetchNearbyPlaces] Found ${nearbyResults.length} results at ${radius}m radius`);
+        const results = await searchNearbyPlaces(userLocation, radius); // This now returns Google's NearbyPlace[]
+        if (results && results.length > 0) {
+          googleNearbyResults = results;
           usedRadius = radius;
           break;
         }
       }
-      
-      if (!nearbyResults || nearbyResults.length === 0) {
+
+      if (!googleNearbyResults || googleNearbyResults.length === 0) {
         console.log('[fetchNearbyPlaces] No results found even at largest radius.');
-        setNearbyPlaces([]); // No results found
+        setNearbyPlaces([]);
       } else {
-        console.log(`[fetchNearbyPlaces] Found ${nearbyResults.length} results at ${usedRadius}m.`);
-        setNearbyPlaces(nearbyResults.slice(0, 5)); // Sadece ilk 5 sonucu göster
+        console.log(`[fetchNearbyPlaces] Found ${googleNearbyResults.length} Google results at ${usedRadius}m.`);
         
-        // Yakındaki ilk yerden şehir bilgisini çıkarıp buna göre challenge getir
-        if (nearbyResults.length > 0 && nearbyResults[0].vicinity) {
-          const city = extractCityFromVicinity(nearbyResults[0].vicinity);
-          if (city) {
-            // Veritabanında kullanmak için yerleri ekle
-            const placesToAdd = nearbyResults.slice(0, 5); // İlk 5 yeri ekle
-            for (const place of placesToAdd) {
-              try {
-                // Using the outer savePlaceToDatabase function
-                await createPlaceFromGoogleData(place, city);
-              } catch (err) {
-                console.error(`Error saving place ${place.name} to database:`, err);
-              }
-            }
-            
-            // Konum bazlı görevleri getir
-            fetchLocationBasedChallenges(city);
-          }
+        const city = googleNearbyResults.length > 0 && googleNearbyResults[0].vicinity 
+          ? extractCityFromVicinity(googleNearbyResults[0].vicinity) 
+          : await userService.getCityFromCoordinates(userLocation.latitude, userLocation.longitude) || 'unknown';
+
+        const supabasePlacesPromises = googleNearbyResults.slice(0, 10).map(googlePlace => 
+          createPlaceFromGoogleData(googlePlace, city)
+        );
+        
+        const resolvedSupabasePlaces = await Promise.all(supabasePlacesPromises);
+        const validSupabasePlaces = resolvedSupabasePlaces.filter(p => p !== null) as Place[];
+        
+        setNearbyPlaces(validSupabasePlaces.slice(0,5)); // Show top 5
+
+        if (city && validSupabasePlaces.length > 0) {
+          fetchLocationBasedChallenges(city);
         }
       }
     } catch (err) {
-      // Log the specific error, check if it's ZERO_RESULTS
       if (err instanceof Error && err.message.includes('ZERO_RESULTS')) {
-        console.warn('[fetchNearbyPlaces] Google Places API returned ZERO_RESULTS. Falling back to Supabase data if available.');
+        console.warn('[fetchNearbyPlaces] Google Places API returned ZERO_RESULTS.');
       } else {
         console.error('[fetchNearbyPlaces] Error searching nearby places:', err);
       }
-      setNearbyPlaces([]); // Hata durumunda da boşalt
+      setNearbyPlaces([]);
     } finally {
       setLoadingNearby(false);
     }
   };
+  
+  const loadUserData = async () => {
+    const userData = await userService.getCurrentUser();
+    setUser(userData);
+    if (userData) {
+      try {
+        const [favIds, bookmarkedIds] = await Promise.all([
+          getUserFavoritePlaceIds(userData.id),
+          getUserBookmarkedChallengeIds(userData.id)
+        ]);
+        setFavoritePlaceIds(favIds);
+        setBookmarkedChallengeIds(bookmarkedIds);
+      } catch (e) {
+        console.error("Failed to load user favorites or bookmarks:", e);
+        // Set to empty arrays in case of partial failure
+        setFavoritePlaceIds(prev => prev || []); // Ensure it's an array
+        setBookmarkedChallengeIds(prev => prev || []); // Ensure it's an array
+      }
+    }
+  };
 
-  const loadData = async () => {
+  const loadAppData = async () => {
     try {
       setLoading(true);
-      
-      // Tüm verileri paralel olarak yükle
-      const [userData, placesData, challengesData, dailyChallengeData, feedPostsData] = await Promise.all([
-        userService.getCurrentUser(),
+      await loadUserData(); // Load user data first
+
+      const [placesData, challengesData, dailyChallengeData, feedPostsData] = await Promise.all([
         placesService.getAllPlaces(),
         challengesService.getAllChallenges(),
         challengesService.getDailyChallenge(),
         feedService.getAllPosts()
       ]);
-      
-      setUser(userData);
+
       setPlaces(placesData || []);
       setChallenges(challengesData || []);
-      
-      // Günün görevi için veri yoksa default veri kullan
+
       if (dailyChallengeData) {
         setDailyChallenge(dailyChallengeData);
         setMockChallengeUsed(false);
       } else {
-        console.log('No daily challenge from API, using default data');
-        // API'den veri yoksa varsayılan bir challenge oluştur
         const defaultChallenge = {
-          id: 'default-challenge-1',
-          title: 'İstanbul Keşif Rotası',
+          id: 'default-challenge-1', title: 'İstanbul Keşif Rotası',
           description: 'İstanbul\'un en popüler 3 turistik noktasını ziyaret edin ve fotoğraf paylaşın.',
-          points: 500,
-          image_url: 'https://images.unsplash.com/photo-1524231757912-21f4fe3a7200',
-          deadline: '3 gün',
-          challenge_type: 'general' as 'general',
-          category: 'general' as 'general',
+          points: 500, image_url: 'https://images.unsplash.com/photo-1524231757912-21f4fe3a7200',
+          deadline: '3 gün', challenge_type: 'general' as 'general', category: 'general' as 'general',
         };
-        
         setDailyChallenge(defaultChallenge);
         setMockChallengeUsed(true);
       }
-      
-      // FeedPost tipi uyumsuzluğunu çözmek için tip dönüşümü
+
       if (feedPostsData) {
         setFeedPosts(feedPostsData as any);
       }
       
-      // Konum ve yakın yerleri yükle
-      getUserLocation();
+      // If user is available, try to get location and nearby places
+      if (user) {
+         getUserLocation(); // This will call fetchNearbyPlaces
+      } else {
+        // If no user, perhaps load some default nearby places or handle appropriately
+        setLoadingNearby(false); // Stop loading nearby if no user/location
+      }
+
     } catch (err) {
       console.error('Veri yükleme hatası:', err);
       setError('Veriler yüklenirken bir hata oluştu. Lütfen tekrar deneyin.');
@@ -170,45 +191,131 @@ export default function HomeScreen() {
   };
   
   useEffect(() => {
-    loadData();
+    loadAppData();
   }, []);
+  
+  // Reload favorites and bookmarks when user changes
+  useEffect(() => {
+    if (user?.id) {
+      Promise.all([
+        getUserFavoritePlaceIds(user.id).catch(e => {
+          console.error("Failed to refresh user favorites:", e);
+          return favoritePlaceIds; // return current state on error
+        }),
+        getUserBookmarkedChallengeIds(user.id).catch(e => {
+          console.error("Failed to refresh user bookmarks:", e);
+          return bookmarkedChallengeIds; // return current state on error
+        })
+      ]).then(([favIds, bookmarkedIds]) => {
+        setFavoritePlaceIds(favIds);
+        setBookmarkedChallengeIds(bookmarkedIds);
+      });
+    }
+  }, [user?.id]);
+
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadData();
+    await loadAppData(); // Use loadAppData for refresh
     setRefreshing(false);
   }, []);
 
-  // Adres bilgisinden şehir adını çıkarmak için yardımcı fonksiyon
+  const handleToggleFavorite = async (placeId: string) => {
+    if (!user) {
+      Alert.alert("Giriş Yapın", "Favorilere eklemek için giriş yapmanız gerekmektedir.");
+      return;
+    }
+    if (!placeId) {
+        Alert.alert("Hata", "Yer ID'si bulunamadı.");
+        return;
+    }
+
+    setFavoriteLoading(prev => ({ ...prev, [placeId]: true }));
+    const isCurrentlyFavorite = favoritePlaceIds.includes(placeId);
+
+    try {
+      let success = false;
+      if (isCurrentlyFavorite) {
+        success = await removeFavoritePlace(user.id, placeId);
+        if (success) {
+          setFavoritePlaceIds(prev => prev.filter(id => id !== placeId));
+          // Toast.show({ type: 'success', text1: 'Favorilerden Kaldırıldı' });
+          if (Platform.OS === 'web') alert('Favorilerden Kaldırıldı'); else Alert.alert('Favorilerden Kaldırıldı');
+        }
+      } else {
+        success = await addFavoritePlace(user.id, placeId);
+        if (success) {
+          setFavoritePlaceIds(prev => [...prev, placeId]);
+           // Toast.show({ type: 'success', text1: 'Favorilere Eklendi' });
+          if (Platform.OS === 'web') alert('Favorilere Eklendi'); else Alert.alert('Favorilere Eklendi');
+        }
+      }
+      if (!success) {
+        // Toast.show({ type: 'error', text1: 'İşlem Başarısız' });
+         if (Platform.OS === 'web') alert('İşlem Başarısız'); else Alert.alert('İşlem Başarısız', 'Favori işlemi sırasında bir hata oluştu.');
+      }
+    } catch (error) {
+      console.error("Error toggling favorite:", error);
+      // Toast.show({ type: 'error', text1: 'Bir hata oluştu' });
+      if (Platform.OS === 'web') alert('Bir hata oluştu'); else Alert.alert('Bir hata oluştu', 'Favori işlemi sırasında bir hata oluştu.');
+    } finally {
+      setFavoriteLoading(prev => ({ ...prev, [placeId]: false }));
+    }
+  };
+
+  const handleToggleBookmark = async (challengeId: string) => {
+    if (!user) {
+      Alert.alert("Giriş Yapın", "Yer işaretlerine eklemek için giriş yapmanız gerekmektedir.");
+      return;
+    }
+    if (!challengeId) {
+      Alert.alert("Hata", "Görev ID'si bulunamadı.");
+      return;
+    }
+
+    setBookmarkLoading(prev => ({ ...prev, [challengeId]: true }));
+    const isCurrentlyBookmarked = bookmarkedChallengeIds.includes(challengeId);
+
+    try {
+      let success = false;
+      if (isCurrentlyBookmarked) {
+        success = await removeBookmarkedChallenge(user.id, challengeId);
+        if (success) {
+          setBookmarkedChallengeIds(prev => prev.filter(id => id !== challengeId));
+          if (Platform.OS === 'web') alert('Yer işaretlerinden kaldırıldı'); else Alert.alert('Yer işaretlerinden kaldırıldı');
+        }
+      } else {
+        success = await addBookmarkedChallenge(user.id, challengeId);
+        if (success) {
+          setBookmarkedChallengeIds(prev => [...prev, challengeId]);
+          if (Platform.OS === 'web') alert('Yer işaretlerine eklendi'); else Alert.alert('Yer işaretlerine eklendi');
+        }
+      }
+      if (!success) {
+        if (Platform.OS === 'web') alert('İşlem Başarısız'); else Alert.alert('İşlem Başarısız', 'Yer işareti işlemi sırasında bir hata oluştu.');
+      }
+    } catch (error) {
+      console.error("Error toggling bookmark:", error);
+      if (Platform.OS === 'web') alert('Bir hata oluştu'); else Alert.alert('Bir hata oluştu', 'Yer işareti işlemi sırasında bir hata oluştu.');
+    } finally {
+      setBookmarkLoading(prev => ({ ...prev, [challengeId]: false }));
+    }
+  };
+  
   const extractCityFromVicinity = (vicinity: string): string | null => {
     if (!vicinity) return null;
-    
-    // Turkish cities list to help with identification
     const turkishCities = [
       'İstanbul', 'Ankara', 'İzmir', 'Bursa', 'Adana', 'Gaziantep', 'Konya', 
       'Antalya', 'Kayseri', 'Mersin', 'Eskişehir', 'Diyarbakır', 'Şanlıurfa',
       'Samsun', 'Malatya', 'Gebze', 'Denizli', 'Sivas', 'Erzurum', 'Tokat',
       'Hatay', 'Manisa', 'Batman', 'Kahramanmaraş', 'Van', 'Elazığ', 'Tekirdağ',
-      'Adapazarı', 'Kocaeli', 'İzmit'  // Adding İzmit explicitly for the current case
+      'Adapazarı', 'Kocaeli', 'İzmit'
     ];
-    
-    // First, check if any city name is directly in the vicinity string
     for (const city of turkishCities) {
-      if (vicinity.includes(city)) {
-        return city;
-      }
+      if (vicinity.includes(city)) return city;
     }
-    
-    // Örnek: "Beyoğlu, İstanbul" -> "İstanbul"
-    // Örnek: "Taksim Meydanı, İstanbul" -> "İstanbul"
     const parts = vicinity.split(',');
-    if (parts.length > 1) {
-      // Take the last part, which is often the city
-      const lastPart = parts[parts.length - 1].trim();
-      return lastPart;
-    }
-    
-    // If we couldn't identify a city, return the whole string or a default
+    if (parts.length > 1) return parts[parts.length - 1].trim();
     return vicinity.trim();
   };
 
@@ -361,14 +468,15 @@ export default function HomeScreen() {
             <FlatList
               horizontal
               showsHorizontalScrollIndicator={false}
-              data={nearbyPlaces}
-              keyExtractor={(item, index) => item.id || `nearby-${index}`}
+              data={nearbyPlaces} // This is now Place[] from Supabase
+              keyExtractor={(item) => item.id} // Use Supabase ID
               contentContainerStyle={styles.flatListContent}
               renderItem={({ item }) => {
-                const photoUrl = item.photos && item.photos.length > 0
-                  ? getPlacePhoto(item.photos[0].photo_reference)
-                  : 'https://via.placeholder.com/400x200?text=No+Image';
-                
+                const isFavorite = favoritePlaceIds.includes(item.id);
+                const isLoadingFavorite = favoriteLoading[item.id];
+                // Photo URL might be item.image_url (from Supabase) or constructed if needed
+                const photoUrl = item.photo_url || item.image_url || (item.photos && item.photos.length > 0 ? getPlacePhoto(item.photos[0].photo_reference) : 'https://via.placeholder.com/400x200?text=No+Image');
+
                 return (
                   <TouchableOpacity 
                     style={styles.placeCard}
@@ -376,129 +484,123 @@ export default function HomeScreen() {
                     onPress={() => {
                       Alert.alert(
                         item.name,
-                        `${item.vicinity}${item.rating ? `\nPuan: ${item.rating}/5` : ''}`,
+                        `${item.address || item.description}${item.rating ? `\nPuan: ${item.rating}/5` : ''}`,
                         [
                           { text: 'Kapat', style: 'cancel' },
-                          { 
-                            text: 'Keşfet', 
-                            onPress: () => router.push('/(tabs)/explore')
-                          }
+                          { text: 'Keşfet', onPress: () => router.push({pathname: '/(tabs)/explore', params: { placeId: item.id }}) }
                         ]
                       );
                     }}
                   >
                     <ThemedView style={styles.cardContainer}>
-                      <LinearGradient
-                        colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.7)']}
-                        style={styles.gradientOverlay}
-                      />
-                      <Image 
-                        source={{ uri: photoUrl }}
-                        style={styles.placeImage}
-                        contentFit="cover"
-                      />
+                      <LinearGradient colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.7)']} style={styles.gradientOverlay} />
+                      <Image source={{ uri: photoUrl }} style={styles.placeImage} contentFit="cover" />
                       <View style={styles.placeInfo}>
-                        <ThemedText style={styles.placeName} numberOfLines={2}>
-                          {item.name}
-                        </ThemedText>
+                        <ThemedText style={styles.placeName} numberOfLines={2}>{item.name}</ThemedText>
                         <View style={styles.placeDetails}>
                           <View style={styles.placeType}>
                             <FontAwesome5 
                               name={
-                                item.types.includes('museum') ? 'university' :
-                                item.types.includes('park') ? 'tree' :
-                                item.types.includes('restaurant') ? 'utensils' :
+                                item.category === 'museum' || item.type === 'müze' ? 'university' :
+                                item.category === 'park' || item.type === 'park' ? 'tree' :
+                                item.category === 'restaurant' || item.type === 'restoran' ? 'utensils' :
                                 'landmark'
                               } 
-                              size={12} 
-                              color={THEME.COLORS.light}
-                            />
-                            <ThemedText style={styles.placeTypeText}>
-                              {item.types[0].replace(/_/g, ' ')}
-                            </ThemedText>
+                              size={12} color={THEME.COLORS.light} />
+                            <ThemedText style={styles.placeTypeText}>{item.type || item.category?.replace(/_/g, ' ')}</ThemedText>
                           </View>
                           {item.rating && (
                             <View style={styles.placeRating}>
                               <FontAwesome5 name="star" size={12} color={THEME.COLORS.accent} />
-                              <ThemedText style={styles.placeRatingText}>
-                                {item.rating.toFixed(1)}
-                              </ThemedText>
+                              <ThemedText style={styles.placeRatingText}>{item.rating.toFixed(1)}</ThemedText>
                             </View>
                           )}
                         </View>
                       </View>
-                      <TouchableOpacity style={styles.favoriteButton}>
-                        <ThemedText style={{ color: THEME.COLORS.accent }}>
-                          <FontAwesome5 name="heart" size={16} />
-                        </ThemedText>
+                      <TouchableOpacity 
+                        style={styles.favoriteButton} 
+                        onPress={() => handleToggleFavorite(item.id)}
+                        disabled={isLoadingFavorite}
+                      >
+                        {isLoadingFavorite ? (
+                          <ActivityIndicator size="small" color={THEME.COLORS.accent} />
+                        ) : (
+                          <FontAwesome5 
+                            name="heart" 
+                            size={18} 
+                            color={isFavorite ? THEME.COLORS.accent : THEME.COLORS.gray} 
+                            solid={isFavorite} // This prop makes the heart solid
+                          />
+                        )}
                       </TouchableOpacity>
                     </ThemedView>
                   </TouchableOpacity>
                 );
               }}
             />
-          ) : places.length > 0 ? (
-            // Yedek olarak Supabase'den yerler gösteriliyor
+          ) : places.length > 0 ? ( // Fallback to general places from Supabase if nearby search fails or returns empty
             <FlatList
               horizontal
               showsHorizontalScrollIndicator={false}
-              data={places.slice(0, 4)}
+              data={places.slice(0, 5)} // Show top 5 from general places
               keyExtractor={(item) => item.id}
               contentContainerStyle={styles.flatListContent}
-              renderItem={({ item }) => (
-                <TouchableOpacity 
-                  style={styles.placeCard}
-                  activeOpacity={0.8}
-                  onPress={() => router.push(`/(tabs)/explore`)}
-                >
-                  <ThemedView style={styles.cardContainer}>
-                    <LinearGradient
-                      colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.7)']}
-                      style={styles.gradientOverlay}
-                    />
-                    <Image 
-                      source={{ uri: item.image_url || item.image }} 
-                      style={styles.placeImage}
-                      contentFit="cover"
-                      transition={300}
-                    />
-                    <View style={styles.placeInfo}>
-                      <ThemedText style={styles.placeName} numberOfLines={2}>
-                        {item.name}
-                      </ThemedText>
-                      <View style={styles.placeDetails}>
-                        <View style={styles.placeType}>
-                          <FontAwesome5 
-                            name={item.type === 'Tarihi Yer' ? 'landmark' : 
-                                  item.type === 'Doğa Rotası' ? 'mountain' : 'store'} 
-                            size={12} 
-                            color={THEME.COLORS.light} 
-                          />
-                          <ThemedText style={styles.placeTypeText}>{item.type}</ThemedText>
-                        </View>
-                        <View style={styles.placeRating}>
-                          <FontAwesome5 name="star" size={12} color={THEME.COLORS.accent} />
-                          <ThemedText style={styles.placeRatingText}>{item.points}</ThemedText>
+              renderItem={({ item }) => {
+                const isFavorite = favoritePlaceIds.includes(item.id);
+                const isLoadingFavorite = favoriteLoading[item.id];
+                return (
+                  <TouchableOpacity 
+                    style={styles.placeCard}
+                    activeOpacity={0.8}
+                    onPress={() => router.push({pathname: '/(tabs)/explore', params: { placeId: item.id }})}
+                  >
+                    <ThemedView style={styles.cardContainer}>
+                      <LinearGradient colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.7)']} style={styles.gradientOverlay} />
+                      <Image source={{ uri: item.image_url || item.image }} style={styles.placeImage} contentFit="cover" transition={300} />
+                      <View style={styles.placeInfo}>
+                        <ThemedText style={styles.placeName} numberOfLines={2}>{item.name}</ThemedText>
+                        <View style={styles.placeDetails}>
+                          <View style={styles.placeType}>
+                            <FontAwesome5 name={item.type === 'Tarihi Yer' ? 'landmark' : item.type === 'Doğa Rotası' ? 'mountain' : 'store'} size={12} color={THEME.COLORS.light} />
+                            <ThemedText style={styles.placeTypeText}>{item.type}</ThemedText>
+                          </View>
+                          <View style={styles.placeRating}>
+                            <FontAwesome5 name="star" size={12} color={THEME.COLORS.accent} />
+                            <ThemedText style={styles.placeRatingText}>{item.points || item.rating?.toFixed(1) || 'N/A'}</ThemedText>
+                          </View>
                         </View>
                       </View>
-                    </View>
-                    <TouchableOpacity style={styles.favoriteButton}>
-                      <ThemedText style={{ color: THEME.COLORS.accent }}>
-                        <FontAwesome5 name="heart" size={16} />
-                      </ThemedText>
-                    </TouchableOpacity>
-                  </ThemedView>
-                </TouchableOpacity>
-              )}
+                      <TouchableOpacity 
+                        style={styles.favoriteButton}
+                        onPress={() => handleToggleFavorite(item.id)}
+                        disabled={isLoadingFavorite}
+                      >
+                         {isLoadingFavorite ? (
+                          <ActivityIndicator size="small" color={THEME.COLORS.accent} />
+                        ) : (
+                          <FontAwesome5 
+                            name="heart" 
+                            size={18} 
+                            color={isFavorite ? THEME.COLORS.accent : THEME.COLORS.gray}
+                            solid={isFavorite} 
+                          />
+                        )}
+                      </TouchableOpacity>
+                    </ThemedView>
+                  </TouchableOpacity>
+                );
+              }}
             />
           ) : (
             <ThemedView style={styles.emptyStateContainer}>
               <FontAwesome5 name="map-marker-alt" size={24} color={THEME.COLORS.primary} />
-              <ThemedText style={styles.emptyStateText}>Henüz yakınınızda yer bulunamadı</ThemedText>
+              <ThemedText style={styles.emptyStateText}>Henüz yakınınızda keşfedilecek yer bulunamadı.</ThemedText>
+              {!location && <ThemedText style={styles.emptyStateText}>Konum izni vererek yakındaki yerleri görebilirsiniz.</ThemedText>}
             </ThemedView>
           )}
         </View>
-
+        {/* Toast Message Component (optional, requires setup) */}
+        {/* <Toast /> */}
         {/* Popular Challenges */}
         <View style={styles.sectionContainer}>
           <View style={styles.sectionHeader}>
@@ -515,55 +617,70 @@ export default function HomeScreen() {
               data={challenges}
               keyExtractor={(item) => item.id}
               contentContainerStyle={styles.flatListContent}
-              renderItem={({ item }) => (
-                <TouchableOpacity 
-                  style={styles.placeCard}
-                  activeOpacity={0.8}
-                  onPress={() => router.push(`/challenge/${item.id}`)}
-                >
-                  <ThemedView style={styles.cardContainer}>
-                    <LinearGradient
-                      colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.7)']}
-                      style={styles.gradientOverlay}
-                    />
-                    <Image 
-                      source={{ uri: item.image_url || item.image || 'https://images.unsplash.com/photo-1501785888041-af3ef285b470' }} 
-                      style={styles.placeImage}
-                      contentFit="cover"
-                    />
-                    <View style={styles.placeInfo}>
-                      <ThemedText style={styles.placeName} numberOfLines={2}>
-                        {item.title}
-                      </ThemedText>
-                      <View style={styles.placeDetails}>
-                        <View style={styles.placeType}>
-                          <FontAwesome5 
-                            name={item.challenge_type === 'visit' ? 'map-marker-alt' : 
-                                  item.challenge_type === 'photo' ? 'camera' : 
-                                  item.challenge_type === 'social' ? 'users' : 
-                                  item.challenge_type === 'gastronomy' ? 'utensils' :
-                                  'tasks'} 
-                            size={12} 
-                            color={THEME.COLORS.light} 
-                          />
-                          <ThemedText style={styles.placeTypeText}>
-                            {item.category || item.challenge_type || 'Genel'}
-                          </ThemedText>
-                        </View>
-                        <View style={styles.placeRating}>
-                          <FontAwesome5 name="star" size={12} color={THEME.COLORS.accent} />
-                          <ThemedText style={styles.placeRatingText}>{item.points}</ThemedText>
+              renderItem={({ item }) => {
+                const isBookmarked = bookmarkedChallengeIds.includes(item.id);
+                const isLoadingBookmark = bookmarkLoading[item.id];
+                return (
+                  <TouchableOpacity 
+                    style={styles.placeCard} // Assuming placeCard style is suitable for challenges too
+                    activeOpacity={0.8}
+                    onPress={() => router.push(`/challenge/${item.id}`)}
+                  >
+                    <ThemedView style={styles.cardContainer}>
+                      <LinearGradient
+                        colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.7)']}
+                        style={styles.gradientOverlay}
+                      />
+                      <Image 
+                        source={{ uri: item.image_url || item.image || 'https://images.unsplash.com/photo-1501785888041-af3ef285b470' }} 
+                        style={styles.placeImage}
+                        contentFit="cover"
+                      />
+                      <View style={styles.placeInfo}>
+                        <ThemedText style={styles.placeName} numberOfLines={2}>
+                          {item.title}
+                        </ThemedText>
+                        <View style={styles.placeDetails}>
+                          <View style={styles.placeType}>
+                            <FontAwesome5 
+                              name={item.challenge_type === 'visit' ? 'map-marker-alt' : 
+                                    item.challenge_type === 'photo' ? 'camera' : 
+                                    item.challenge_type === 'social' ? 'users' : 
+                                    item.challenge_type === 'gastronomy' ? 'utensils' :
+                                    'tasks'} 
+                              size={12} 
+                              color={THEME.COLORS.light} 
+                            />
+                            <ThemedText style={styles.placeTypeText}>
+                              {item.category || item.challenge_type || 'Genel'}
+                            </ThemedText>
+                          </View>
+                          <View style={styles.placeRating}> {/* Assuming points can be displayed like rating */}
+                            <FontAwesome5 name="star" size={12} color={THEME.COLORS.accent} />
+                            <ThemedText style={styles.placeRatingText}>{item.points}</ThemedText>
+                          </View>
                         </View>
                       </View>
-                    </View>
-                    <TouchableOpacity style={styles.favoriteButton}>
-                      <ThemedText style={{ color: THEME.COLORS.accent }}>
-                        <FontAwesome5 name="bookmark" size={16} />
-                      </ThemedText>
-                    </TouchableOpacity>
-                  </ThemedView>
-                </TouchableOpacity>
-              )}
+                      <TouchableOpacity 
+                        style={styles.favoriteButton} // Using favoriteButton style for now, can be changed to styles.bookmarkButton
+                        onPress={() => handleToggleBookmark(item.id)}
+                        disabled={isLoadingBookmark}
+                      >
+                        {isLoadingBookmark ? (
+                          <ActivityIndicator size="small" color={THEME.COLORS.accent} />
+                        ) : (
+                          <FontAwesome5 
+                            name="bookmark" 
+                            size={18} 
+                            color={isBookmarked ? THEME.COLORS.accent : THEME.COLORS.gray} 
+                            solid={isBookmarked} 
+                          />
+                        )}
+                      </TouchableOpacity>
+                    </ThemedView>
+                  </TouchableOpacity>
+                );
+              }}
             />
           ) : (
             <ThemedView style={styles.emptyStateContainer}>
@@ -702,7 +819,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 10,
+    paddingTop: Platform.OS === 'android' ? 15 : 10, // Adjust for Android status bar
     paddingBottom: 15,
   },
   greeting: {
@@ -912,20 +1029,16 @@ const styles = StyleSheet.create({
   },
   favoriteButton: {
     position: 'absolute',
-    top: 16,
-    right: 16,
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    borderRadius: 30,
-    width: 36,
-    height: 36,
+    top: 12, // Adjusted for better visual balance
+    right: 12, // Adjusted for better visual balance
+    backgroundColor: 'rgba(0,0,0,0.5)', // Darker background for better contrast
+    borderRadius: 20, // Make it a circle
+    width: 40, // Increased size
+    height: 40, // Increased size
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
+    // Removed platform-specific shadow, consider alternative for iOS if needed
   },
   routesContainer: {
     marginVertical: 8,

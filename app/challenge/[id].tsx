@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, View, ScrollView, Image, TouchableOpacity, ActivityIndicator, Dimensions, Alert } from 'react-native';
+import { StyleSheet, View, ScrollView, Image, TouchableOpacity, ActivityIndicator, Dimensions, Alert, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Stack, useLocalSearchParams, router } from 'expo-router';
@@ -55,8 +55,11 @@ export default function ChallengeDetailScreen() {
   const fetchChallengeDetails = async () => {
     try {
       setIsLoading(true);
-      // Use the enhanced getChallengeById function from challengesService
-      const foundChallenge = await challengesService.getChallengeById(id);
+      const { data: { user } } = await supabase.auth.getUser();
+      const userId = user?.id;
+
+      // Use getChallengeDetails to include participation_count and user-specific progress
+      const foundChallenge = await challengesService.getChallengeDetails(id, userId);
       
       if (foundChallenge) {
         setChallenge(foundChallenge);
@@ -150,6 +153,34 @@ export default function ChallengeDetailScreen() {
       Alert.alert('Hata', 'Bir sorun oluştu. Lütfen tekrar deneyin.');
     } finally {
       setIsJoining(false);
+    }
+  };
+
+  const handleShareChallenge = async () => {
+    if (!challenge) {
+      Alert.alert('Hata', 'Görev bilgileri henüz yüklenmedi.');
+      return;
+    }
+
+    try {
+      const result = await Share.share({
+        message: `TravelPoints uygulamasındaki bu harika göreve göz at: "${challenge.title}"! Bence seveceksin.`,
+        // url: `https://travelpoints.example.com/challenge/${challenge.id}`, // Uygulama linki (varsa)
+        title: `Görevi Paylaş: ${challenge.title}`
+      });
+
+      if (result.action === Share.sharedAction) {
+        if (result.activityType) {
+          console.log('Görev paylaşıldı, aktivite tipi: ', result.activityType);
+        } else {
+          console.log('Görev paylaşıldı');
+        }
+      } else if (result.action === Share.dismissedAction) {
+        console.log('Paylaşım ekranı kapatıldı');
+      }
+    } catch (error: any) {
+      Alert.alert('Hata', 'Görev paylaşılırken bir sorun oluştu.');
+      console.error('Görev paylaşma hatası:', error.message);
     }
   };
 
@@ -354,7 +385,7 @@ export default function ChallengeDetailScreen() {
         </View>
       </SafeAreaView>
       
-      <TouchableOpacity style={styles.shareButtonFloat}>
+      <TouchableOpacity style={styles.shareButtonFloat} onPress={handleShareChallenge}>
         <FontAwesome5 name="share-alt" size={20} color={THEME.COLORS.light} />
       </TouchableOpacity>
     </View>

@@ -128,9 +128,9 @@ export const challengesService = {
   },
 
   // Meydan okuma detaylarını getir
-  getChallengeDetails: async (challengeId: string) => {
+  getChallengeDetails: async (challengeId: string, userId?: string) => {
     try {
-      const { data, error } = await supabase
+      const { data: challengeData, error: challengeError } = await supabase
         .from('challenges')
         .select(`
           *,
@@ -139,25 +139,75 @@ export const challengesService = {
         .eq('id', challengeId)
         .single();
 
-      if (error) {
-        console.error('Error fetching challenge details:', error);
+      if (challengeError) {
+        console.error('Error fetching challenge details:', challengeError.message);
         return null;
       }
 
-      // Katılımcı sayısını getir
+      let requirements = challengeData.requirements || [];
+
+      // Fetch user-specific progress if userId is provided
+      if (userId && requirements.length > 0) {
+        // 1. Get the user_challenge record to find the user_challenge_id
+        const { data: userChallengeData, error: userChallengeError } = await supabase
+          .from('user_challenges')
+          .select('id') // We only need the id of the user_challenges record
+          .eq('user_id', userId)
+          .eq('challenge_id', challengeId)
+          .maybeSingle();
+
+        if (userChallengeError) {
+          console.error('Error fetching user_challenge record:', userChallengeError.message);
+          // Proceed without progress if this fails, or handle error as critical
+        }
+
+        if (userChallengeData) {
+          const userChallengeId = userChallengeData.id;
+          // 2. Fetch all progress for these requirements for this user_challenge_id
+          const { data: progressData, error: progressError } = await supabase
+            .from('user_challenge_requirement_progress')
+            .select('requirement_id, completed, current_count')
+            .eq('user_challenge_id', userChallengeId);
+
+          if (progressError) {
+            console.error('Error fetching requirement progress:', progressError.message);
+          } else if (progressData && progressData.length > 0) {
+            // 3. Merge progress into requirements
+            requirements = requirements.map(req => {
+              const userProgress = progressData.find(p => p.requirement_id === req.id);
+              return {
+                ...req,
+                is_completed: userProgress?.completed || false,
+                current_count: userProgress?.current_count || 0,
+              };
+            });
+          }
+        } else {
+          // No participation record, so all requirements are not started for this user
+           requirements = requirements.map(req => ({
+            ...req,
+            is_completed: false,
+            current_count: 0,
+          }));
+        }
+      }
+
+
+      // Katılımcı sayısını getir (genel katılım)
       const { count: participationCount, error: countError } = await supabase
         .from('user_challenges')
         .select('*', { count: 'exact', head: true })
         .eq('challenge_id', challengeId);
 
-      if (!countError) {
-        data.participation_count = participationCount || 0;
+      if (countError) {
+        console.warn('Error fetching participation count:', countError.message);
       }
+      
+      challengeData.participation_count = participationCount || 0;
+      challengeData.requirements = requirements; // Assign potentially augmented requirements
 
-      return {
-        ...data,
-        requirements: data.requirements || []
-      };
+      return challengeData as Challenge;
+
     } catch (error) {
       console.error('Error in getChallengeDetails:', error);
       return null;
