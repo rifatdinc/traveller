@@ -1,25 +1,19 @@
 // Theme and UI constants for TravelPoints app
+// Some colors have been moved to constants/Colors.ts for dynamic theming
 export const THEME = {
   COLORS: {
-    primary: '#4F74E3',
-    secondary: '#6C63FF',
-    accent: '#FF7B5A',
     success: '#4CD964',
     info: '#5AC8FA',
     warning: '#FF9500',
     danger: '#FF3B30',
     error: '#FF3B30', // Hata mesajları için kırmızı renk ekledim
-    light: '#F8F9FA',
-    dark: '#212529',
+    light: '#F8F9FA', // This 'light' is a general light color, not theme-specific text/bg
+    dark: '#212529',  // This 'dark' is a general dark color, not theme-specific text/bg
     gray: '#6C757D',
-    background: '#F0F0F0',
-    card: '#FFFFFF',
     white: '#FFFFFF', // Added for visit status UI
-    text: '#212529',
-    border: '#E1E1E1',
     notification: '#FF3B30',
-    shadowColor: '#000000',
-    textLight: '#6C757D',
+    // Removed: primary, secondary, accent, background, card, text, border, shadowColor, textLight
+    // These are now in constants/Colors.ts for light/dark mode variants
   },
   SIZES: {
     base: 8,

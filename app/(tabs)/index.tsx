@@ -7,9 +7,11 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
-import { THEME } from '@/constants/Theme';
+import { ThemedText, ThemedTextProps } from '@/components/ThemedText';
+import { ThemedView, ThemedViewProps } from '@/components/ThemedView';
+import { useColorScheme } from '@/hooks/useColorScheme';
+import { Colors } from '@/constants/Colors';
+import { THEME } from '@/constants/Theme'; // For static colors like error, success
 import { feedService } from '@/services/feedService';
 import { challengesService } from '@/services/challengesService';
 import { placesService } from '@/services/placesService';
@@ -37,6 +39,7 @@ import {
 // import Toast from 'react-native-toast-message'; // Optional: for user feedback
 
 export default function HomeScreen() {
+  const theme = useColorScheme() ?? 'light';
   const [loading, setLoading] = useState<boolean>(true);
   const [user, setUser] = useState<User | null>(null);
   const [places, setPlaces] = useState<Place[]>([]); // Fallback places from Supabase
@@ -352,47 +355,47 @@ export default function HomeScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.container, styles.loadingContainer]} edges={['right', 'left']}>
-        <ActivityIndicator size="large" color={THEME.COLORS.primary} />
-        <ThemedText style={styles.loadingText}>Veriler yükleniyor...</ThemedText>
+      <SafeAreaView style={[{ flex: 1, backgroundColor: Colors[theme].background }, styles.loadingContainer]} edges={['right', 'left']}>
+        <ActivityIndicator size="large" color={Colors[theme].primary} />
+        <ThemedText style={[styles.loadingText, { color: Colors[theme].primary }]}>Veriler yükleniyor...</ThemedText>
       </SafeAreaView>
     );
   }
 
   if (error) {
     return (
-      <SafeAreaView style={[styles.container, styles.errorContainer]} edges={['right', 'left']}>
+      <SafeAreaView style={[{ flex: 1, backgroundColor: Colors[theme].background }, styles.errorContainer]} edges={['right', 'left']}>
         <FontAwesome5 name="exclamation-circle" size={50} color={THEME.COLORS.error} />
         <ThemedText style={styles.errorText}>{error}</ThemedText>
         <TouchableOpacity
-          style={styles.retryButton}
+          style={[styles.retryButton, { backgroundColor: Colors[theme].primary }]}
           onPress={() => {
             setError(null);
-            loadData();
+            loadAppData(); // Changed from loadData
           }}
         >
-          <ThemedText style={styles.retryButtonText}>Tekrar Dene</ThemedText>
+          <ThemedText style={[styles.retryButtonText, { color: Colors.dark.text /* Assuming white/light text on primary */ }]}>Tekrar Dene</ThemedText>
         </TouchableOpacity>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['right', 'left']}>
-      <StatusBar style="auto" />
+    <SafeAreaView style={[styles.container, { backgroundColor: Colors[theme].background }]} edges={['right', 'left']}>
+      <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: Colors[theme].background }]}>
         <View>
           <ThemedText style={styles.greeting}>Merhaba, {user?.username || 'Gezgin'}</ThemedText>
           <View style={styles.pointsContainer}>
-            <ThemedText style={{ color: THEME.COLORS.accent }}>
+            <ThemedText style={{ color: Colors[theme].accent }}>
               <FontAwesome5 name="star" size={16} />
             </ThemedText>
-            <ThemedText style={styles.pointsText}>{user?.total_points || 0} Puan</ThemedText>
+            <ThemedText style={[styles.pointsText, { color: Colors[theme].accent }]}>{user?.total_points || 0} Puan</ThemedText>
           </View>
         </View>
         <TouchableOpacity 
-          style={styles.profileIcon} 
+          style={[styles.profileIcon, { borderColor: Colors[theme].primary }]} 
           onPress={() => router.push('/(tabs)/profile')}
         >
           <Image 
@@ -406,12 +409,21 @@ export default function HomeScreen() {
         style={styles.scrollContainer} 
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={onRefresh} 
+            tintColor={Colors[theme].primary} // For iOS
+            colors={[Colors[theme].primary]} // For Android
+          />
         }
       >
         {/* Featured Challenge */}
         {dailyChallenge && (
-          <ThemedView style={styles.featuredCard}>
+          <ThemedView 
+            lightColor={Colors.light.card} 
+            darkColor={Colors.dark.card} 
+            style={[styles.featuredCard, { shadowColor: Colors[theme].shadowColor }]}
+          >
             <Image 
               source={{ uri: dailyChallenge.image_url || dailyChallenge.image || 'https://images.unsplash.com/photo-1501785888041-af3ef285b470' }} 
               style={styles.featuredImage}
@@ -419,20 +431,20 @@ export default function HomeScreen() {
             />
             <View style={styles.featuredOverlay}>
               <View style={styles.featuredContent}>
-                <ThemedText style={styles.featuredTag}>
+                <ThemedText style={[styles.featuredTag, { backgroundColor: Colors[theme].accent, color: Colors.dark.text /* Static light text for high contrast on accent */}]}>
                   {mockChallengeUsed ? 'Önerilen Görev' : 'Günün Görevi'}
                 </ThemedText>
-                <ThemedText style={styles.featuredTitle}>{dailyChallenge.title}</ThemedText>
-                <ThemedText style={styles.featuredDescription}>{dailyChallenge.description}</ThemedText>
+                <ThemedText style={[styles.featuredTitle, {color: Colors.dark.text /* Static light text for high contrast on overlay */}]}>{dailyChallenge.title}</ThemedText>
+                <ThemedText style={[styles.featuredDescription, {color: Colors.dark.text /* Static light text for high contrast on overlay */}]}>{dailyChallenge.description}</ThemedText>
                 <View style={styles.featuredFooter}>
                   <View style={styles.featuredPoints}>
-                    <ThemedText style={{ color: THEME.COLORS.accent }}>
+                    <ThemedText style={{ color: Colors[theme].accent }}>
                       <FontAwesome5 name="star" size={16} />
                     </ThemedText>
-                    <ThemedText style={styles.featuredPointsText}>{dailyChallenge.points} Puan</ThemedText>
+                    <ThemedText style={[styles.featuredPointsText, {color: Colors.dark.text /* Static light text for high contrast on overlay */}]}>{dailyChallenge.points} Puan</ThemedText>
                   </View>
                   <TouchableOpacity 
-                    style={styles.featuredButton}
+                    style={[styles.featuredButton, { backgroundColor: Colors[theme].primary }]}
                     onPress={() => {
                       if (mockChallengeUsed) {
                         Alert.alert('Katılım Başarılı', 'Bu göreve katıldınız! Tamamlandığında puanları kazanacaksınız.');
@@ -441,7 +453,7 @@ export default function HomeScreen() {
                       }
                     }}
                   >
-                    <ThemedText style={styles.featuredButtonText}>Katıl</ThemedText>
+                    <ThemedText style={[styles.featuredButtonText, { color: Colors.dark.text /* Static light text for high contrast on primary */ }]}>Katıl</ThemedText>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -454,32 +466,31 @@ export default function HomeScreen() {
           <View style={styles.sectionHeader}>
             <ThemedText style={styles.sectionTitle}>Yakınındaki Yerler</ThemedText>
             <TouchableOpacity onPress={() => router.push('/(tabs)/explore')}>
-              <ThemedText style={styles.seeAllText}>Tümünü Gör</ThemedText>
+              <ThemedText style={[styles.seeAllText, { color: Colors[theme].primary }]}>Tümünü Gör</ThemedText>
             </TouchableOpacity>
           </View>
 
           {/* Yakındaki yerler API'den yükleniyor */}
           {loadingNearby ? (
-            <ThemedView style={styles.loadingNearbyContainer}>
-              <ActivityIndicator size="small" color={THEME.COLORS.primary} />
-              <ThemedText style={styles.loadingNearbyText}>Yakınındaki yerler aranıyor...</ThemedText>
+             <ThemedView lightColor={Colors[theme].background} darkColor={Colors[theme].background} style={styles.loadingNearbyContainer}>
+              <ActivityIndicator size="small" color={Colors[theme].primary} />
+              <ThemedText style={[styles.loadingNearbyText, { color: Colors[theme].textLight }]}>Yakınındaki yerler aranıyor...</ThemedText>
             </ThemedView>
           ) : nearbyPlaces.length > 0 ? (
             <FlatList
               horizontal
               showsHorizontalScrollIndicator={false}
-              data={nearbyPlaces} // This is now Place[] from Supabase
-              keyExtractor={(item) => item.id} // Use Supabase ID
+              data={nearbyPlaces} 
+              keyExtractor={(item) => item.id} 
               contentContainerStyle={styles.flatListContent}
               renderItem={({ item }) => {
                 const isFavorite = favoritePlaceIds.includes(item.id);
                 const isLoadingFavorite = favoriteLoading[item.id];
-                // Photo URL might be item.image_url (from Supabase) or constructed if needed
                 const photoUrl = item.photo_url || item.image_url || (item.photos && item.photos.length > 0 ? getPlacePhoto(item.photos[0].photo_reference) : 'https://via.placeholder.com/400x200?text=No+Image');
 
                 return (
                   <TouchableOpacity 
-                    style={styles.placeCard}
+                    style={[styles.placeCard, { backgroundColor: Colors[theme].card, shadowColor: Colors[theme].shadowColor }]}
                     activeOpacity={0.8}
                     onPress={() => {
                       Alert.alert(
@@ -492,7 +503,7 @@ export default function HomeScreen() {
                       );
                     }}
                   >
-                    <ThemedView style={styles.cardContainer}>
+                    <ThemedView lightColor={Colors.light.card} darkColor={Colors.dark.card} style={styles.cardContainer}>
                       <LinearGradient colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.7)']} style={styles.gradientOverlay} />
                       <Image source={{ uri: photoUrl }} style={styles.placeImage} contentFit="cover" />
                       <View style={styles.placeInfo}>
@@ -506,30 +517,30 @@ export default function HomeScreen() {
                                 item.category === 'restaurant' || item.type === 'restoran' ? 'utensils' :
                                 'landmark'
                               } 
-                              size={12} color={THEME.COLORS.light} />
-                            <ThemedText style={styles.placeTypeText}>{item.type || item.category?.replace(/_/g, ' ')}</ThemedText>
+                              size={12} color={Colors.dark.text /* Static light text for overlay */} />
+                            <ThemedText style={[styles.placeTypeText, {color: Colors.dark.text /* Static light for overlay*/}]}>{item.type || item.category?.replace(/_/g, ' ')}</ThemedText>
                           </View>
                           {item.rating && (
                             <View style={styles.placeRating}>
-                              <FontAwesome5 name="star" size={12} color={THEME.COLORS.accent} />
-                              <ThemedText style={styles.placeRatingText}>{item.rating.toFixed(1)}</ThemedText>
+                              <FontAwesome5 name="star" size={12} color={Colors[theme].accent} />
+                              <ThemedText style={[styles.placeRatingText, {color: Colors.dark.text /* Static light for overlay*/}]}>{item.rating.toFixed(1)}</ThemedText>
                             </View>
                           )}
                         </View>
                       </View>
                       <TouchableOpacity 
-                        style={styles.favoriteButton} 
+                        style={[styles.favoriteButton, { backgroundColor: theme === 'light' ? 'rgba(255,255,255,0.9)' : 'rgba(50,50,50,0.8)' }]}
                         onPress={() => handleToggleFavorite(item.id)}
                         disabled={isLoadingFavorite}
                       >
                         {isLoadingFavorite ? (
-                          <ActivityIndicator size="small" color={THEME.COLORS.accent} />
+                          <ActivityIndicator size="small" color={Colors[theme].accent} />
                         ) : (
                           <FontAwesome5 
                             name="heart" 
                             size={18} 
-                            color={isFavorite ? THEME.COLORS.accent : THEME.COLORS.gray} 
-                            solid={isFavorite} // This prop makes the heart solid
+                            color={isFavorite ? Colors[theme].accent : Colors[theme].textLight} 
+                            solid={isFavorite}
                           />
                         )}
                       </TouchableOpacity>
@@ -538,11 +549,11 @@ export default function HomeScreen() {
                 );
               }}
             />
-          ) : places.length > 0 ? ( // Fallback to general places from Supabase if nearby search fails or returns empty
+          ) : places.length > 0 ? ( 
             <FlatList
               horizontal
               showsHorizontalScrollIndicator={false}
-              data={places.slice(0, 5)} // Show top 5 from general places
+              data={places.slice(0, 5)} 
               keyExtractor={(item) => item.id}
               contentContainerStyle={styles.flatListContent}
               renderItem={({ item }) => {
@@ -550,38 +561,38 @@ export default function HomeScreen() {
                 const isLoadingFavorite = favoriteLoading[item.id];
                 return (
                   <TouchableOpacity 
-                    style={styles.placeCard}
+                    style={[styles.placeCard, { backgroundColor: Colors[theme].card, shadowColor: Colors[theme].shadowColor }]}
                     activeOpacity={0.8}
                     onPress={() => router.push({pathname: '/(tabs)/explore', params: { placeId: item.id }})}
                   >
-                    <ThemedView style={styles.cardContainer}>
+                    <ThemedView lightColor={Colors.light.card} darkColor={Colors.dark.card} style={styles.cardContainer}>
                       <LinearGradient colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.7)']} style={styles.gradientOverlay} />
                       <Image source={{ uri: item.image_url || item.image }} style={styles.placeImage} contentFit="cover" transition={300} />
                       <View style={styles.placeInfo}>
                         <ThemedText style={styles.placeName} numberOfLines={2}>{item.name}</ThemedText>
                         <View style={styles.placeDetails}>
                           <View style={styles.placeType}>
-                            <FontAwesome5 name={item.type === 'Tarihi Yer' ? 'landmark' : item.type === 'Doğa Rotası' ? 'mountain' : 'store'} size={12} color={THEME.COLORS.light} />
-                            <ThemedText style={styles.placeTypeText}>{item.type}</ThemedText>
+                            <FontAwesome5 name={item.type === 'Tarihi Yer' ? 'landmark' : item.type === 'Doğa Rotası' ? 'mountain' : 'store'} size={12} color={Colors.dark.text /* Static light for overlay */} />
+                            <ThemedText style={[styles.placeTypeText, {color: Colors.dark.text /* Static light for overlay*/}]}>{item.type}</ThemedText>
                           </View>
                           <View style={styles.placeRating}>
-                            <FontAwesome5 name="star" size={12} color={THEME.COLORS.accent} />
-                            <ThemedText style={styles.placeRatingText}>{item.points || item.rating?.toFixed(1) || 'N/A'}</ThemedText>
+                            <FontAwesome5 name="star" size={12} color={Colors[theme].accent} />
+                            <ThemedText style={[styles.placeRatingText, {color: Colors.dark.text /* Static light for overlay*/}]}>{item.points || item.rating?.toFixed(1) || 'N/A'}</ThemedText>
                           </View>
                         </View>
                       </View>
                       <TouchableOpacity 
-                        style={styles.favoriteButton}
+                        style={[styles.favoriteButton, { backgroundColor: theme === 'light' ? 'rgba(255,255,255,0.9)' : 'rgba(50,50,50,0.8)'}]}
                         onPress={() => handleToggleFavorite(item.id)}
                         disabled={isLoadingFavorite}
                       >
                          {isLoadingFavorite ? (
-                          <ActivityIndicator size="small" color={THEME.COLORS.accent} />
+                          <ActivityIndicator size="small" color={Colors[theme].accent} />
                         ) : (
                           <FontAwesome5 
                             name="heart" 
                             size={18} 
-                            color={isFavorite ? THEME.COLORS.accent : THEME.COLORS.gray}
+                            color={isFavorite ? Colors[theme].accent : Colors[theme].textLight}
                             solid={isFavorite} 
                           />
                         )}
@@ -592,10 +603,14 @@ export default function HomeScreen() {
               }}
             />
           ) : (
-            <ThemedView style={styles.emptyStateContainer}>
-              <FontAwesome5 name="map-marker-alt" size={24} color={THEME.COLORS.primary} />
-              <ThemedText style={styles.emptyStateText}>Henüz yakınınızda keşfedilecek yer bulunamadı.</ThemedText>
-              {!location && <ThemedText style={styles.emptyStateText}>Konum izni vererek yakındaki yerleri görebilirsiniz.</ThemedText>}
+            <ThemedView 
+              lightColor={Colors.light.card} 
+              darkColor={Colors.dark.card} 
+              style={[styles.emptyStateContainer, {shadowColor: Colors[theme].shadowColor}]}
+            >
+              <FontAwesome5 name="map-marker-alt" size={24} color={Colors[theme].primary} />
+              <ThemedText style={[styles.emptyStateText, {color: Colors[theme].textLight}]}>Henüz yakınınızda keşfedilecek yer bulunamadı.</ThemedText>
+              {!location && <ThemedText style={[styles.emptyStateText, {color: Colors[theme].textLight}]}>Konum izni vererek yakındaki yerleri görebilirsiniz.</ThemedText>}
             </ThemedView>
           )}
         </View>
@@ -606,7 +621,7 @@ export default function HomeScreen() {
           <View style={styles.sectionHeader}>
             <ThemedText style={styles.sectionTitle}>Popüler Görevler</ThemedText>
             <TouchableOpacity onPress={() => router.push('/(tabs)/challenges')}>
-              <ThemedText style={styles.seeAllText}>Tümünü Gör</ThemedText>
+              <ThemedText style={[styles.seeAllText, { color: Colors[theme].primary }]}>Tümünü Gör</ThemedText>
             </TouchableOpacity>
           </View>
 
@@ -622,11 +637,11 @@ export default function HomeScreen() {
                 const isLoadingBookmark = bookmarkLoading[item.id];
                 return (
                   <TouchableOpacity 
-                    style={styles.placeCard} // Assuming placeCard style is suitable for challenges too
+                    style={[styles.placeCard, { backgroundColor: Colors[theme].card, shadowColor: Colors[theme].shadowColor }]}
                     activeOpacity={0.8}
                     onPress={() => router.push(`/challenge/${item.id}`)}
                   >
-                    <ThemedView style={styles.cardContainer}>
+                    <View style={styles.cardContainer}>
                       <LinearGradient
                         colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.7)']}
                         style={styles.gradientOverlay}
@@ -649,43 +664,47 @@ export default function HomeScreen() {
                                     item.challenge_type === 'gastronomy' ? 'utensils' :
                                     'tasks'} 
                               size={12} 
-                              color={THEME.COLORS.light} 
+                              color={Colors.dark.text} // Text on overlay should be light
                             />
-                            <ThemedText style={styles.placeTypeText}>
+                            <ThemedText style={[styles.placeTypeText, { color: Colors.dark.text }]}>
                               {item.category || item.challenge_type || 'Genel'}
                             </ThemedText>
                           </View>
                           <View style={styles.placeRating}> {/* Assuming points can be displayed like rating */}
-                            <FontAwesome5 name="star" size={12} color={THEME.COLORS.accent} />
-                            <ThemedText style={styles.placeRatingText}>{item.points}</ThemedText>
+                            <FontAwesome5 name="star" size={12} color={Colors[theme].accent} />
+                            <ThemedText style={[styles.placeRatingText, { color: Colors.dark.text }]}>{item.points}</ThemedText>
                           </View>
                         </View>
                       </View>
                       <TouchableOpacity 
-                        style={styles.favoriteButton} // Using favoriteButton style for now, can be changed to styles.bookmarkButton
+                        style={[styles.favoriteButton, { backgroundColor: theme === 'light' ? 'rgba(255,255,255,0.9)' : 'rgba(50,50,50,0.8)' }]}
                         onPress={() => handleToggleBookmark(item.id)}
                         disabled={isLoadingBookmark}
                       >
                         {isLoadingBookmark ? (
-                          <ActivityIndicator size="small" color={THEME.COLORS.accent} />
+                          <ActivityIndicator size="small" color={Colors[theme].accent} />
                         ) : (
                           <FontAwesome5 
                             name="bookmark" 
                             size={18} 
-                            color={isBookmarked ? THEME.COLORS.accent : THEME.COLORS.gray} 
+                            color={isBookmarked ? Colors[theme].accent : Colors[theme].textLight} 
                             solid={isBookmarked} 
                           />
                         )}
                       </TouchableOpacity>
-                    </ThemedView>
+                    </View>
                   </TouchableOpacity>
                 );
               }}
             />
           ) : (
-            <ThemedView style={styles.emptyStateContainer}>
-              <FontAwesome5 name="tasks" size={24} color={THEME.COLORS.primary} />
-              <ThemedText style={styles.emptyStateText}>Henüz görev bulunamadı</ThemedText>
+            <ThemedView 
+              lightColor={Colors.light.card} 
+              darkColor={Colors.dark.card} 
+              style={[styles.emptyStateContainer, {shadowColor: Colors[theme].shadowColor}]}
+            >
+              <FontAwesome5 name="tasks" size={24} color={Colors[theme].primary} />
+              <ThemedText style={[styles.emptyStateText, {color: Colors[theme].textLight}]}>Henüz görev bulunamadı</ThemedText>
             </ThemedView>
           )}
         </View>
@@ -695,25 +714,25 @@ export default function HomeScreen() {
           <View style={styles.sectionHeader}>
             <ThemedText style={styles.sectionTitle}>Rotalarım</ThemedText>
             <TouchableOpacity onPress={() => router.push(`/route` as any)}>
-              <ThemedText style={styles.seeAllText}>Yeni Rota Oluştur</ThemedText>
+              <ThemedText style={[styles.seeAllText, { color: Colors[theme].primary }]}>Yeni Rota Oluştur</ThemedText>
             </TouchableOpacity>
           </View>
 
-          <ThemedView style={styles.routesContainer}>
+          <ThemedView lightColor={Colors[theme].background} darkColor={Colors[theme].background} style={styles.routesContainer}>
             <TouchableOpacity 
               style={styles.createRouteCard}
               activeOpacity={0.8}
               onPress={() => router.push(`/route` as any)}
             >
               <LinearGradient
-                colors={[THEME.COLORS.primary, THEME.COLORS.secondary]}
+                colors={theme === 'light' ? [Colors.light.primary, Colors.light.secondary] : [Colors.dark.primary, Colors.dark.secondary]}
                 style={styles.routeGradient}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
               >
                 <FontAwesome5 name="route" size={24} color="white" />
-                <ThemedText style={styles.createRouteText}>Yeni Rota Oluştur</ThemedText>
-                <ThemedText style={styles.createRouteSubtext}>
+                <ThemedText style={[styles.createRouteText, { color: Colors.dark.text }]}>Yeni Rota Oluştur</ThemedText>
+                <ThemedText style={[styles.createRouteSubtext, { color: Colors.dark.text }]}>
                   Başlangıç ve varış noktalarını belirle, rota üzerindeki yerleri keşfet
                 </ThemedText>
               </LinearGradient>
@@ -726,13 +745,18 @@ export default function HomeScreen() {
           <View style={styles.sectionHeader}>
             <ThemedText style={styles.sectionTitle}>Gezgin Hikayeleri</ThemedText>
             <TouchableOpacity>
-              <ThemedText style={styles.seeAllText}>Tümünü Gör</ThemedText>
+              <ThemedText style={[styles.seeAllText, { color: Colors[theme].primary }]}>Tümünü Gör</ThemedText>
             </TouchableOpacity>
           </View>
 
           {feedPosts.length > 0 ? (
             feedPosts.map((post) => (
-              <ThemedView key={post.id} style={styles.storyCard}>
+              <ThemedView 
+                key={post.id} 
+                lightColor={Colors.light.card} 
+                darkColor={Colors.dark.card} 
+                style={[styles.storyCard, {shadowColor: Colors[theme].shadowColor}]}
+              >
                 <View style={styles.storyHeader}>
                   <Image
                     source={{ uri: post.user?.avatar_url || 'https://randomuser.me/api/portraits/men/1.jpg' }}
@@ -795,18 +819,18 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: THEME.COLORS.background,
+  container: { // Base container, flex:1 is key. Background set dynamically.
+    flex: 1,
   },
-  loadingNearbyContainer: {
+  loadingNearbyContainer: { // Used with ThemedView
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 16,
   },
-  loadingNearbyText: {
+  loadingNearbyText: { // Used with ThemedText
     marginLeft: 8,
     fontSize: THEME.SIZES.medium,
-    color: THEME.COLORS.gray,
   },
   flatListContent: {
     paddingRight: 16,
@@ -814,15 +838,15 @@ const styles = StyleSheet.create({
   scrollContainer: {
     flex: 1,
   },
-  header: {
+  header: { // Background set dynamically
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'android' ? 15 : 10, // Adjust for Android status bar
+    paddingTop: Platform.OS === 'android' ? 15 : 10,
     paddingBottom: 15,
   },
-  greeting: {
+  greeting: { // Color from ThemedText
     fontSize: THEME.SIZES.large,
     fontWeight: 'bold',
   },
@@ -831,19 +855,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 5,
   },
-  pointsText: {
+  pointsText: { // Color set dynamically
     marginLeft: 5,
     fontSize: THEME.SIZES.medium,
-    color: THEME.COLORS.accent,
     fontWeight: 'bold',
   },
-  profileIcon: {
+  profileIcon: { // BorderColor set dynamically
     width: 40,
     height: 40,
     borderRadius: 20,
     overflow: 'hidden',
     borderWidth: 2,
-    borderColor: THEME.COLORS.primary,
   },
   avatar: {
     width: '100%',
@@ -855,6 +877,11 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     overflow: 'hidden',
     height: 200,
+    // shadowColor will be applied dynamically via inline style
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   featuredImage: {
     width: '100%',
@@ -866,18 +893,17 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     top: 0,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(0,0,0,0.4)', // Static overlay, usually dark
     justifyContent: 'flex-end',
   },
   featuredContent: {
     padding: 15,
   },
   featuredTag: {
-    color: THEME.COLORS.light,
+    // backgroundColor and color are dynamic (inline)
     fontSize: THEME.SIZES.small,
     fontWeight: 'bold',
     textTransform: 'uppercase',
-    backgroundColor: THEME.COLORS.accent,
     alignSelf: 'flex-start',
     paddingHorizontal: 10,
     paddingVertical: 3,
@@ -885,13 +911,13 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   featuredTitle: {
-    color: THEME.COLORS.light,
+    // color is dynamic (inline)
     fontSize: THEME.SIZES.xlarge,
     fontWeight: 'bold',
     marginBottom: 5,
   },
   featuredDescription: {
-    color: THEME.COLORS.light,
+    // color is dynamic (inline)
     fontSize: THEME.SIZES.medium,
     marginBottom: 10,
   },
@@ -905,18 +931,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   featuredPointsText: {
-    color: THEME.COLORS.light,
+    // color is dynamic (inline)
     fontWeight: 'bold',
     marginLeft: 5,
   },
   featuredButton: {
-    backgroundColor: THEME.COLORS.primary,
+    // backgroundColor is dynamic (inline)
     paddingHorizontal: 15,
     paddingVertical: 8,
     borderRadius: 20,
   },
   featuredButtonText: {
-    color: THEME.COLORS.light,
+    // color is dynamic (inline)
     fontWeight: 'bold',
   },
   sectionContainer: {
@@ -924,7 +950,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   lastSection: {
-    marginBottom: 40, // Add extra space at the bottom for the last section
+    marginBottom: 40, 
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -933,28 +959,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     marginBottom: 15,
   },
-  sectionTitle: {
+  sectionTitle: { // Color from ThemedText
     fontSize: THEME.SIZES.large,
     fontWeight: 'bold',
   },
-  seeAllText: {
-    color: THEME.COLORS.primary,
+  seeAllText: { // Color set dynamically
     fontWeight: 'bold',
   },
-  placeCard: {
+  placeCard: { // Background and shadowColor set dynamically
     width: 280,
     height: 200,
     marginRight: 16,
     borderRadius: 16,
     overflow: 'hidden',
-    backgroundColor: THEME.COLORS.card,
-    shadowColor: THEME.COLORS.shadowColor,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 8,
     elevation: 4,
   },
-  cardContainer: {
+  cardContainer: { // Used with View, not ThemedView, so it's transparent
     flex: 1,
     position: 'relative',
   },
@@ -978,12 +1001,12 @@ const styles = StyleSheet.create({
     right: 16,
     zIndex: 2,
   },
-  placeName: {
+  placeName: { // Color set to Colors.dark.text (static light for overlay)
     fontSize: THEME.SIZES.large,
     fontWeight: 'bold',
-    color: THEME.COLORS.light,
+    color: Colors.dark.text, 
     marginBottom: 12,
-    shadowColor: '#000',
+    shadowColor: '#000', 
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.5,
     shadowRadius: 2,
@@ -997,16 +1020,16 @@ const styles = StyleSheet.create({
   placeType: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: 'rgba(255,255,255,0.15)', 
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: 'rgba(255,255,255,0.2)', 
   },
-  placeTypeText: {
+  placeTypeText: { // Color set to Colors.dark.text (static light for overlay)
     fontSize: THEME.SIZES.small,
-    color: THEME.COLORS.light,
+    color: Colors.dark.text, 
     marginLeft: 6,
     textTransform: 'capitalize',
     fontWeight: '600',
@@ -1014,33 +1037,31 @@ const styles = StyleSheet.create({
   placeRating: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: 'rgba(255,255,255,0.15)', 
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: 'rgba(255,255,255,0.2)', 
   },
-  placeRatingText: {
+  placeRatingText: { // Color set to Colors.dark.text (static light for overlay)
     fontSize: THEME.SIZES.small,
-    color: THEME.COLORS.light,
+    color: Colors.dark.text, 
     marginLeft: 6,
     fontWeight: '600',
   },
-  favoriteButton: {
+  favoriteButton: { // Background set dynamically
     position: 'absolute',
-    top: 12, // Adjusted for better visual balance
-    right: 12, // Adjusted for better visual balance
-    backgroundColor: 'rgba(0,0,0,0.5)', // Darker background for better contrast
-    borderRadius: 20, // Make it a circle
-    width: 40, // Increased size
-    height: 40, // Increased size
+    top: 12, 
+    right: 12, 
+    borderRadius: 20, 
+    width: 40, 
+    height: 40, 
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 3,
-    // Removed platform-specific shadow, consider alternative for iOS if needed
   },
-  routesContainer: {
+  routesContainer: { // Used with ThemedView
     marginVertical: 8,
   },
   createRouteCard: {
@@ -1049,7 +1070,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: 16,
   },
-  routeGradient: {
+  routeGradient: { // Colors for gradient set dynamically
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
@@ -1058,13 +1079,13 @@ const styles = StyleSheet.create({
   createRouteText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#fff',
+    // color is dynamic (inline)
     marginTop: 12,
     marginBottom: 8,
   },
   createRouteSubtext: {
     fontSize: 13,
-    color: '#fff',
+    // color is dynamic (inline)
     opacity: 0.8,
     textAlign: 'center',
     maxWidth: '90%',
@@ -1074,8 +1095,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     borderRadius: 15,
     overflow: 'hidden',
-    backgroundColor: THEME.COLORS.card,
-    shadowColor: THEME.COLORS.shadowColor,
+    // backgroundColor and shadowColor are dynamic (ThemedView + inline)
     shadowOffset: {
       width: 0,
       height: 2,
@@ -1107,12 +1127,12 @@ const styles = StyleSheet.create({
   storyPlaceText: {
     fontSize: 12,
     marginLeft: 5,
-    color: THEME.COLORS.gray,
+    // color is dynamic (inline)
   },
   storyTime: {
     fontSize: 12,
-    color: THEME.COLORS.gray,
     marginLeft: 'auto',
+    // color is dynamic (inline)
   },
   storyImage: {
     width: '100%',
@@ -1135,7 +1155,7 @@ const styles = StyleSheet.create({
   storyActionText: {
     marginLeft: 5,
     fontSize: THEME.SIZES.small,
-    color: THEME.COLORS.gray,
+    // color is dynamic (inline)
   },
   // Yükleme durumu için stiller
   loadingContainer: {
@@ -1145,28 +1165,27 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 10,
     fontSize: THEME.SIZES.medium,
-    color: THEME.COLORS.primary,
+    // color: THEME.COLORS.primary, // Dynamic
   },
   // Hata durumu için stiller
-  errorContainer: {
+  errorContainer: { // Background set dynamically on SafeAreaView
     justifyContent: 'center',
     alignItems: 'center',
+    flex: 1, // Ensure it fills SafeAreaView
   },
-  errorText: {
+  errorText: { // Color from ThemedText
     marginTop: 15,
     fontSize: THEME.SIZES.medium,
     textAlign: 'center',
     marginBottom: 20,
     paddingHorizontal: 40,
   },
-  retryButton: {
-    backgroundColor: THEME.COLORS.primary,
+  retryButton: { // Background set dynamically
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 20,
   },
-  retryButtonText: {
-    color: THEME.COLORS.light,
+  retryButtonText: { // Color set dynamically
     fontWeight: 'bold',
   },
   // Boş durum için stiller

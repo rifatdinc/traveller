@@ -509,48 +509,115 @@ export const challengesService = {
     }
   },
 
-  // Gereksinim ilerlemesini günceller
-  updateRequirementProgress: async (userChallengeId: string, requirementId: string, progress: number, completed: boolean = false) => {
+  // Kullanıcının bir meydan okuma gereksinimindeki ilerlemesini günceller
+  updateUserChallengeRequirementProgress: async (
+    userId: string, 
+    challengeId: string, 
+    requirementId: string, 
+    currentCountIncrement: number = 0, 
+    isCompletedOverride?: boolean, 
+    completionDetails?: any
+  ): Promise<{updatedProgress: any | null, overallChallengeProgress?: { progress: number, progress_percentage: number, completed: boolean }}> => {
     try {
-      // Update the specific requirement progress
-      const { data, error } = await supabase
-        .from('user_challenge_requirement_progress')
-        .update({
-          current_count: progress,
-          completed: completed,
-          completion_date: completed ? new Date().toISOString() : null
-        })
-        .eq('user_challenge_id', userChallengeId)
-        .eq('requirement_id', requirementId)
-        .select()
-        .single();
-
-      if (error) {
-        console.error('Error updating requirement progress:', error);
-        throw error;
-      }
-
-      // Get the user_challenge record
+      // 1. Find user_challenge_id
       const { data: userChallenge, error: userChallengeError } = await supabase
         .from('user_challenges')
-        .select('challenge_id')
-        .eq('id', userChallengeId)
+        .select('id')
+        .eq('user_id', userId)
+        .eq('challenge_id', challengeId)
         .single();
 
-      if (userChallengeError) {
-        console.error('Error fetching user challenge:', userChallengeError);
-        throw userChallengeError;
+      if (userChallengeError || !userChallenge) {
+        console.error('Error finding user challenge participation or user has not joined:', userChallengeError?.message);
+        throw new Error('User has not joined this challenge or an error occurred.');
+      }
+      const userChallengeId = userChallenge.id;
+
+      // 2. Find or create user_challenge_requirement_progress record
+      let { data: progressRecord, error: findProgressError } = await supabase
+        .from('user_challenge_requirement_progress')
+        .select('*')
+        .eq('user_challenge_id', userChallengeId)
+        .eq('requirement_id', requirementId)
+        .maybeSingle();
+
+      if (findProgressError && findProgressError.code !== 'PGRST116') { // PGRST116: row not found, which is fine
+        console.error('Error finding requirement progress:', findProgressError.message);
+        throw findProgressError;
+      }
+      
+      // Fetch requirement details to check its 'count' property for completion logic
+      const { data: requirementDetails, error: reqDetailsError } = await supabase
+        .from('challenge_requirements')
+        .select('count, type') // Also fetch type for simple non-countable tasks
+        .eq('id', requirementId)
+        .single();
+
+      if (reqDetailsError || !requirementDetails) {
+        console.error('Error fetching requirement details:', reqDetailsError?.message);
+        throw new Error('Could not fetch requirement details.');
+      }
+      
+      const newCurrentCount = (progressRecord?.current_count || 0) + currentCountIncrement;
+      let isCompleted = progressRecord?.completed || false;
+
+      if (isCompletedOverride !== undefined) {
+        isCompleted = isCompletedOverride;
+      } else if (requirementDetails.count && requirementDetails.count > 0) {
+        isCompleted = newCurrentCount >= requirementDetails.count;
+      } else if (currentCountIncrement > 0) { // For simple non-countable tasks that are completed by any increment
+        isCompleted = true; 
+      }
+      // If no increment and no override, and no count, completion status remains unchanged unless already completed.
+
+      const updateData: any = {
+        current_count: newCurrentCount,
+        completed: isCompleted,
+        completion_details: completionDetails,
+      };
+      if (isCompleted && !progressRecord?.completed) { // Only set completion_date if it's newly completed
+        updateData.completion_date = new Date().toISOString();
       }
 
-      // Update overall challenge progress
-      await challengesService.recalculateChallengeProgress(userChallengeId, userChallenge.challenge_id);
 
-      return data;
+      let updatedProgress;
+      if (progressRecord) {
+        // Update existing progress record
+        const { data, error } = await supabase
+          .from('user_challenge_requirement_progress')
+          .update(updateData)
+          .eq('id', progressRecord.id)
+          .select()
+          .single();
+        if (error) throw error;
+        updatedProgress = data;
+      } else {
+        // Create new progress record if it didn't exist
+        const { data, error } = await supabase
+          .from('user_challenge_requirement_progress')
+          .insert({
+            user_challenge_id: userChallengeId,
+            requirement_id: requirementId,
+            ...updateData,
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        updatedProgress = data;
+      }
+      
+      // Recalculate overall challenge progress
+      const overallChallengeProgress = await challengesService.recalculateChallengeProgress(userChallengeId, challengeId);
+
+      return { updatedProgress, overallChallengeProgress };
+
     } catch (error) {
-      console.error('Error in updateRequirementProgress:', error);
-      throw error;
+      console.error('Error in updateUserChallengeRequirementProgress:', error);
+      // In a real app, you might want to throw the error or return a more structured error response
+      return { updatedProgress: null }; 
     }
   },
+
 
   // Meydan okuma ilerlemesini yeniden hesaplar
   recalculateChallengeProgress: async (userChallengeId: string, challengeId: string) => {
@@ -636,64 +703,36 @@ export const challengesService = {
     }
   },
 
-  // Gereksinimin tamamlanma durumunu günceller
-  completeRequirement: async (userId: string, challengeId: string, requirementId: string) => {
+  // Gereksinimin tamamlanma durumunu günceller (refactored to use the new function)
+  completeRequirement: async (userId: string, challengeId: string, requirementId: string, completionDetails?: any) => {
     try {
-      // Get the user_challenge record
-      const { data: userChallenge, error: userChallengeError } = await supabase
-        .from('user_challenges')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('challenge_id', challengeId)
-        .maybeSingle();
-
-      if (userChallengeError) {
-        console.error('Error fetching user challenge:', userChallengeError);
-        throw userChallengeError;
-      }
-
-      if (!userChallenge) {
-        throw new Error('User is not participating in this challenge');
-      }
-
-      // Get the requirement details
-      const { data: requirement, error: reqError } = await supabase
+       // Fetch requirement details to see if it's a countable task or simple completion
+      const { data: requirementInfo, error: reqInfoError } = await supabase
         .from('challenge_requirements')
-        .select('count')
+        .select('count, type')
         .eq('id', requirementId)
         .single();
 
-      if (reqError) {
-        console.error('Error fetching requirement:', reqError);
-        throw reqError;
+      if (reqInfoError || !requirementInfo) {
+        console.error('Could not fetch requirement info for completion logic:', reqInfoError?.message);
+        throw new Error('Requirement details not found.');
       }
+      
+      // For countable requirements, increment by 1. For others, just mark as complete.
+      const increment = (requirementInfo.count && requirementInfo.count > 0) ? 1 : 0;
+      const isCompletedOverride = (requirementInfo.count && requirementInfo.count > 0) ? undefined : true;
 
-      // Get current progress
-      const { data: progress, error: progressError } = await supabase
-        .from('user_challenge_requirement_progress')
-        .select('current_count')
-        .eq('user_challenge_id', userChallenge.id)
-        .eq('requirement_id', requirementId)
-        .single();
 
-      if (progressError) {
-        console.error('Error fetching requirement progress:', progressError);
-        throw progressError;
-      }
-
-      // Increment the progress count
-      const newCount = (progress.current_count || 0) + 1;
-      const isCompleted = newCount >= (requirement.count || 1);
-
-      // Update the progress
-      return await challengesService.updateRequirementProgress(
-        userChallenge.id,
+      return await challengesService.updateUserChallengeRequirementProgress(
+        userId,
+        challengeId,
         requirementId,
-        newCount,
-        isCompleted
+        increment, // Increment count by 1 for countable, 0 for others (will be marked by isCompletedOverride)
+        isCompletedOverride, // Override to true for non-countable, otherwise let logic decide
+        completionDetails
       );
     } catch (error) {
-      console.error('Error in completeRequirement:', error);
+      console.error('Error in completeRequirement wrapper:', error);
       throw error;
     }
   }

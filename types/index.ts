@@ -113,6 +113,7 @@ export interface UserChallengeRequirementProgress {
   completed: boolean;
   current_count?: number;
   completion_date?: string;
+  completion_details?: any; // To store details like photo URI, check-in location, etc.
 }
 
 export interface FeedPost {

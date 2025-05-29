@@ -2,12 +2,7 @@ import axios from 'axios';
 import * as Location from 'expo-location';
 import { supabase } from '@/lib/supabase';
 import { decode } from 'base64-arraybuffer';
-
-// Google Maps API anahtarı
-// NOT: Bu anahtarı kullanmadan önce Google Cloud Console'da doğru API'lerin
-// (Maps, Places, Geocoding vb.) etkinleştirildiğinden ve uygulama paket adının
-// kısıtlamalarda doğru yapılandırıldığından emin olun
-export const GOOGLE_API_KEY = 'AIzaSyCXyczc8T58aJ7Mxn71zOzErkpGCHv2vD0';
+import { GOOGLE_API_KEY } from '@env';
 
 // Type tanımlamaları
 export interface LocationCoords {

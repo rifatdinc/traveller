@@ -8,6 +8,7 @@ import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { AuthProvider } from '@/hooks/useAuth';
+import Toast from 'react-native-toast-message';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -66,6 +67,7 @@ export default function RootLayout() {
           />
         </Stack>
         <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+        <Toast />
       </ThemeProvider>
     </AuthProvider>
   );
