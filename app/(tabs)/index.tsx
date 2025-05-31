@@ -69,23 +69,36 @@ export default function HomeScreen() {
         }
       }
 
-      if (!nearbyResults || nearbyResults.length === 0) {
-        console.log('[fetchNearbyPlacesForDisplay] No results found even at largest radius.');
-        setNearbyPlaces([]);
-      } else {
+      // If no results or error, set to empty or handle accordingly
+      let finalNearbyPlaces: (NearbyPlace & { isFavorite?: boolean })[] = [];
+
+      if (nearbyResults && nearbyResults.length > 0) {
         console.log(`[fetchNearbyPlacesForDisplay] Found ${nearbyResults.length} results at ${usedRadius}m.`);
-        setNearbyPlaces(nearbyResults.slice(0, 5));
-        // City extraction and challenge fetching is removed from here.
-        // Saving places to DB can still happen if desired, but will need userCity from context for the 'city' field.
-        // For now, removing the createPlaceFromGoogleData loop to simplify. It can be added back if needed.
+        const slicedResults = nearbyResults.slice(0, 5);
+        const currentUserId = user?.id; // Access user from component state
+
+        if (currentUserId) {
+          finalNearbyPlaces = await Promise.all(
+            slicedResults.map(async (place) => ({
+              ...place,
+              isFavorite: await placesService.isPlaceFavorite(currentUserId, undefined, place.id),
+            }))
+          );
+        } else {
+          finalNearbyPlaces = slicedResults.map(p => ({ ...p, isFavorite: false }));
+        }
+      } else {
+        console.log('[fetchNearbyPlacesForDisplay] No results found even at largest radius.');
       }
+      setNearbyPlaces(finalNearbyPlaces);
+
     } catch (err) {
       if (err instanceof Error && err.message.includes('ZERO_RESULTS')) {
         console.warn('[fetchNearbyPlacesForDisplay] Google Places API returned ZERO_RESULTS.');
       } else {
         console.error('[fetchNearbyPlacesForDisplay] Error searching nearby places:', err);
       }
-      setNearbyPlaces([]);
+      setNearbyPlaces([]); // Set to empty array on error
     } finally {
       setLoadingNearby(false);
     }
@@ -108,7 +121,22 @@ export default function HomeScreen() {
       
       setUser(userData);
       setPlaces(generalPlacesData || []);
-      setChallenges(generalChallengesData || []);
+      // setChallenges(generalChallengesData || []); // Will be set after adding isBookmarked
+
+      // For Challenges - set with isBookmarked
+      if (userData && userData.id && generalChallengesData && generalChallengesData.length > 0) {
+        const challengesWithBookmarks = await Promise.all(
+          generalChallengesData.map(async (challenge) => ({
+            ...challenge,
+            isBookmarked: await challengesService.isChallengeBookmarked(userData.id, challenge.id),
+          }))
+        );
+        setChallenges(challengesWithBookmarks);
+      } else if (generalChallengesData) {
+        setChallenges(generalChallengesData.map(c => ({ ...c, isBookmarked: false })));
+      } else {
+        setChallenges([]);
+      }
       
       if (generalDailyChallengeData) {
         setDailyChallenge(generalDailyChallengeData);
@@ -501,10 +529,56 @@ export default function HomeScreen() {
                           )}
                         </View>
                       </View>
-                      <TouchableOpacity style={styles.favoriteButton}>
-                        <ThemedText style={{ color: THEME.COLORS.accent }}>
-                          <FontAwesome5 name="heart" size={16} />
-                        </ThemedText>
+                      <TouchableOpacity
+                        style={styles.favoriteButton}
+                        onPress={async () => {
+                          if (!user || !user.id) {
+                            Alert.alert("Giriş Yapın", "Favorilere eklemek için giriş yapmalısınız.");
+                            return;
+                          }
+                          // Type assertion for item as NearbyPlace with isFavorite
+                          const currentItem = item as NearbyPlace & { isFavorite?: boolean };
+                          const isCurrentlyFavorite = currentItem.isFavorite;
+
+                          // Optimistic update
+                          setNearbyPlaces(currentPlaces =>
+                            currentPlaces.map(p =>
+                              p.id === currentItem.id ? { ...p, isFavorite: !isCurrentlyFavorite } : p
+                            )
+                          );
+
+                          try {
+                            if (isCurrentlyFavorite) {
+                              await placesService.removeFavoritePlace(user.id, undefined, currentItem.id);
+                            } else {
+                              // Ensure userCity is available, provide a fallback or handle if not
+                              const cityForFavorite = userCity || 'Unknown City';
+                              await placesService.addFavoritePlace(user.id, {
+                                google_place_id: currentItem.id, // item.id is google_place_id for NearbyPlace
+                                name: currentItem.name,
+                                image_url: getPlacePhoto(currentItem.photos?.[0]?.photo_reference),
+                                type: currentItem.types?.[0],
+                                city: cityForFavorite,
+                              });
+                            }
+                          } catch (err) {
+                            console.error("Error updating favorite status:", err);
+                            // Revert optimistic update
+                            setNearbyPlaces(currentPlaces =>
+                              currentPlaces.map(p =>
+                                p.id === currentItem.id ? { ...p, isFavorite: isCurrentlyFavorite } : p
+                              )
+                            );
+                            Alert.alert("Hata", "Favori durumu güncellenirken bir sorun oluştu.");
+                          }
+                        }}
+                      >
+                        <FontAwesome5
+                          name="heart"
+                          size={16}
+                          solid={(item as NearbyPlace & { isFavorite?: boolean }).isFavorite}
+                          color={(item as NearbyPlace & { isFavorite?: boolean }).isFavorite ? THEME.COLORS.accent : THEME.COLORS.gray}
+                        />
                       </TouchableOpacity>
                     </ThemedView>
                   </TouchableOpacity>
@@ -630,10 +704,54 @@ export default function HomeScreen() {
                         </View>
                       </View>
                     </View>
-                    <TouchableOpacity style={styles.favoriteButton}>
-                      <ThemedText style={{ color: THEME.COLORS.accent }}>
-                        <FontAwesome5 name="bookmark" size={16} />
-                      </ThemedText>
+                    <TouchableOpacity
+                      style={styles.favoriteButton}
+                      onPress={async () => {
+                        if (!user || !user.id) {
+                          Alert.alert("Giriş Yapın", "Yer imlerine eklemek için giriş yapmalısınız.");
+                          return;
+                        }
+                        // Type assertion for item as Challenge with isBookmarked
+                        const currentItem = item as Challenge & { isBookmarked?: boolean };
+                        const isCurrentlyBookmarked = currentItem.isBookmarked;
+
+                        // Optimistic update
+                        setChallenges(currentChallenges =>
+                          currentChallenges.map(c =>
+                            c.id === currentItem.id ? { ...c, isBookmarked: !isCurrentlyBookmarked } : c
+                          )
+                        );
+
+                        try {
+                          if (isCurrentlyBookmarked) {
+                            await challengesService.removeBookmarkedChallenge(user.id, currentItem.id);
+                          } else {
+                            await challengesService.addBookmarkedChallenge(user.id, {
+                              challenge_id: currentItem.id,
+                              title: currentItem.title,
+                              image_url: currentItem.image_url || currentItem.image,
+                              points: currentItem.points,
+                              category: currentItem.category,
+                            });
+                          }
+                        } catch (err) {
+                          console.error("Error updating bookmark status:", err);
+                          // Revert optimistic update
+                          setChallenges(currentChallenges =>
+                            currentChallenges.map(c =>
+                              c.id === currentItem.id ? { ...c, isBookmarked: isCurrentlyBookmarked } : c
+                            )
+                          );
+                          Alert.alert("Hata", "Yer imi durumu güncellenirken bir sorun oluştu.");
+                        }
+                      }}
+                    >
+                      <FontAwesome5
+                        name="bookmark"
+                        size={16}
+                        solid={(item as Challenge & { isBookmarked?: boolean }).isBookmarked}
+                        color={(item as Challenge & { isBookmarked?: boolean }).isBookmarked ? THEME.COLORS.accent : THEME.COLORS.gray}
+                      />
                     </TouchableOpacity>
                   </ThemedView>
                 </TouchableOpacity>

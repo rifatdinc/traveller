@@ -141,3 +141,26 @@ export interface Plan {
   place?: Place;
   created_at?: string;
 }
+
+export interface UserFavoritePlace {
+  id: string;
+  user_id: string;
+  place_id?: string; // Optional if it's a Google Place not yet in our DB
+  google_place_id?: string; // Use this for places from Google API
+  name: string; // Denormalized
+  image_url?: string; // Denormalized
+  type?: string; // Denormalized place type
+  city?: string; // Denormalized city
+  created_at: string;
+}
+
+export interface UserBookmarkedChallenge {
+  id: string;
+  user_id: string;
+  challenge_id: string;
+  title: string; // Denormalized
+  image_url?: string; // Denormalized
+  points?: number; // Denormalized
+  category?: string; // Denormalized
+  created_at: string;
+}

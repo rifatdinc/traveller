@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import { Challenge } from '@/types';
+import { Challenge, UserBookmarkedChallenge, ChallengeRequirement } from '@/types';
 import { statsService } from './statsService';
 
 // Görevler servisleri
@@ -645,6 +645,133 @@ export const challengesService = {
     } catch (error) {
       console.error('Error in completeRequirement:', error);
       throw error;
+    }
+  },
+
+  // Add a challenge to bookmarks
+  addBookmarkedChallenge: async (userId: string, bookmarkData: Omit<UserBookmarkedChallenge, 'id' | 'user_id' | 'created_at'>): Promise<UserBookmarkedChallenge | null> => {
+    if (!bookmarkData.challenge_id) {
+      console.error('Error bookmarking challenge: challenge_id must be provided.');
+      return null;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('user_bookmarked_challenges')
+        .insert([{
+          user_id: userId,
+          ...bookmarkData
+        }])
+        .select()
+        .single();
+
+      if (error) {
+        if (error.code === '23505') { // Unique constraint violation
+          console.warn('Error bookmarking challenge: Already bookmarked.', error.message);
+          // Optionally, fetch and return the existing bookmark
+          return challengesService.getBoookmarkedChallengeDetails(userId, bookmarkData.challenge_id);
+        }
+        console.error('Error bookmarking challenge:', error);
+        return null;
+      }
+      return data as UserBookmarkedChallenge;
+    } catch (err) {
+      console.error('Exception in addBookmarkedChallenge:', err);
+      return null;
+    }
+  },
+
+  // Remove a challenge from bookmarks
+  removeBookmarkedChallenge: async (userId: string, challengeId: string): Promise<boolean> => {
+    if (!challengeId) {
+      console.error('Error removing bookmark: challengeId must be provided.');
+      return false;
+    }
+    try {
+      const { error } = await supabase
+        .from('user_bookmarked_challenges')
+        .delete()
+        .eq('user_id', userId)
+        .eq('challenge_id', challengeId);
+
+      if (error) {
+        console.error('Error removing challenge bookmark:', error);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error('Exception in removeBookmarkedChallenge:', err);
+      return false;
+    }
+  },
+
+  // Check if a challenge is bookmarked by a user
+  isChallengeBookmarked: async (userId: string, challengeId: string): Promise<boolean> => {
+    if (!challengeId) {
+      // console.warn('isChallengeBookmarked check without challengeId');
+      return false;
+    }
+    try {
+      const { error, count } = await supabase
+        .from('user_bookmarked_challenges')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .eq('challenge_id', challengeId);
+
+      if (error) {
+        console.error('Error checking if challenge is bookmarked:', error);
+        return false;
+      }
+      return (count || 0) > 0;
+    } catch (err) {
+      console.error('Exception in isChallengeBookmarked:', err);
+      return false;
+    }
+  },
+
+  // Get all bookmarked challenges for a user
+  getUserBookmarkedChallenges: async (userId: string): Promise<UserBookmarkedChallenge[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('user_bookmarked_challenges')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching user bookmarked challenges:', error);
+        return [];
+      }
+      return data as UserBookmarkedChallenge[];
+    } catch (err) {
+      console.error('Exception in getUserBookmarkedChallenges:', err);
+      return [];
+    }
+  },
+
+  // Helper to get details of a specific bookmark entry
+  getBoookmarkedChallengeDetails: async (userId: string, challengeId: string): Promise<UserBookmarkedChallenge | null> => {
+    if (!challengeId) {
+      return null;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('user_bookmarked_challenges')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('challenge_id', challengeId)
+        .limit(1)
+        .single();
+
+      if (error) {
+        if (error.code !== 'PGRST116') { // PGRST116: "Query returned no rows"
+          console.error('Error fetching specific bookmarked challenge details:', error);
+        }
+        return null;
+      }
+      return data as UserBookmarkedChallenge;
+    } catch (err) {
+      console.error('Exception in getBoookmarkedChallengeDetails:', err);
+      return null;
     }
   }
 };

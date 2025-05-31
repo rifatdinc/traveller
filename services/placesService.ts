@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import axios from 'axios';
 import { GOOGLE_API_KEY, findPlaceFromTextQuery } from '@/lib/googleMapsService';
+import { UserFavoritePlace, Place } from '@/types';
 
 // Yarıçapı metreyi dereceye çevirmek için yardımcı fonksiyon
 const metersToDecimalDegrees = (meters: number, latitude: number) => {
@@ -329,6 +330,156 @@ export const placesService = {
     return addedPlaces;
   },
 
+  // Add a place to favorites
+  addFavoritePlace: async (userId: string, favoriteData: Omit<UserFavoritePlace, 'id' | 'user_id' | 'created_at'>): Promise<UserFavoritePlace | null> => {
+    if (!favoriteData.place_id && !favoriteData.google_place_id) {
+      console.error('Error adding favorite place: place_id or google_place_id must be provided.');
+      return null;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('user_favorite_places')
+        .insert([{
+          user_id: userId,
+          ...favoriteData
+        }])
+        .select()
+        .single();
+
+      if (error) {
+        // Handle potential unique constraint violation gracefully if Supabase returns a specific code for it
+        if (error.code === '23505') { // PostgreSQL unique violation code
+          console.warn('Error adding favorite place: Already favorited.', error.message);
+          // Optionally, fetch and return the existing favorite
+          const existing = await placesService.getFavoritePlaceDetails(userId, favoriteData.place_id, favoriteData.google_place_id);
+          return existing;
+        }
+        console.error('Error adding favorite place:', error);
+        return null;
+      }
+      return data as UserFavoritePlace;
+    } catch (err) {
+      console.error('Exception in addFavoritePlace:', err);
+      return null;
+    }
+  },
+
+  // Remove a place from favorites
+  removeFavoritePlace: async (userId: string, placeId?: string, googlePlaceId?: string): Promise<boolean> => {
+    if (!placeId && !googlePlaceId) {
+      console.error('Error removing favorite place: placeId or googlePlaceId must be provided.');
+      return false;
+    }
+    try {
+      let query = supabase
+        .from('user_favorite_places')
+        .delete()
+        .eq('user_id', userId);
+
+      if (placeId) {
+        query = query.eq('place_id', placeId);
+      } else if (googlePlaceId) {
+        query = query.eq('google_place_id', googlePlaceId);
+      }
+
+      const { error } = await query;
+
+      if (error) {
+        console.error('Error removing favorite place:', error);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error('Exception in removeFavoritePlace:', err);
+      return false;
+    }
+  },
+
+  // Check if a place is favorited by a user
+  isPlaceFavorite: async (userId: string, placeId?: string, googlePlaceId?: string): Promise<boolean> => {
+    if (!placeId && !googlePlaceId) {
+      // console.warn('isPlaceFavorite check without placeId or googlePlaceId');
+      return false;
+    }
+    try {
+      let query = supabase
+        .from('user_favorite_places')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId);
+
+      if (placeId) {
+        query = query.eq('place_id', placeId);
+      } else if (googlePlaceId) {
+        query = query.eq('google_place_id', googlePlaceId);
+      } else {
+        return false; // Should not happen if initial check passes
+      }
+
+      const { error, count } = await query;
+
+      if (error) {
+        console.error('Error checking if place is favorite:', error);
+        return false;
+      }
+      return (count || 0) > 0;
+    } catch (err) {
+      console.error('Exception in isPlaceFavorite:', err);
+      return false;
+    }
+  },
+
+  // Get all favorited places for a user
+  getUserFavoritePlaces: async (userId: string): Promise<UserFavoritePlace[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('user_favorite_places')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching user favorite places:', error);
+        return [];
+      }
+      return data as UserFavoritePlace[];
+    } catch (err) {
+      console.error('Exception in getUserFavoritePlaces:', err);
+      return [];
+    }
+  },
+
+  // Helper to get details of a specific favorite entry (used in addFavoritePlace for existing ones)
+  getFavoritePlaceDetails: async (userId: string, placeId?: string, googlePlaceId?: string): Promise<UserFavoritePlace | null> => {
+    if (!placeId && !googlePlaceId) {
+      return null;
+    }
+    try {
+      let query = supabase
+        .from('user_favorite_places')
+        .select('*')
+        .eq('user_id', userId);
+
+      if (placeId) {
+        query = query.eq('place_id', placeId);
+      } else if (googlePlaceId) {
+        query = query.eq('google_place_id', googlePlaceId);
+      }
+       query = query.limit(1).single();
+
+      const { data, error } = await query;
+
+      if (error) {
+        if (error.code !== 'PGRST116') { // PGRST116: "Query returned no rows"
+          console.error('Error fetching specific favorite place details:', error);
+        }
+        return null;
+      }
+      return data as UserFavoritePlace;
+    } catch (err) {
+      console.error('Exception in getFavoritePlaceDetails:', err);
+      return null;
+    }
+  }
 };
 
 // İki nokta arasındaki mesafeyi metre cinsinden hesapla (Haversine formülü)
