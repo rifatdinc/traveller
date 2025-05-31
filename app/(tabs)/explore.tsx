@@ -27,6 +27,8 @@ import { useLocation } from '@/contexts/LocationContext'; // Added
 import { Place } from '@/types';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { placesService } from '@/services/placesService';
+import { userService } from '@/services/userService'; // Added userService
+import { User } from '@/types'; // Added User type
 import Animated, { 
   useAnimatedScrollHandler,
   useAnimatedStyle,
@@ -51,7 +53,7 @@ interface Category {
 }
 
 interface PlaceCardProps {
-  place: NearbyPlace;
+  place: NearbyPlace & { isFavorite?: boolean }; // Added isFavorite
   onPress: (id: string) => void;
   style?: any;
 }
@@ -85,6 +87,7 @@ export default function ExploreScreen() {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [showMap, setShowMap] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [user, setUser] = useState<User | null>(null); // Added user state
 
   const mapRef = useRef<MapView>(null);
   const scrollY = useSharedValue(0);
@@ -97,6 +100,15 @@ export default function ExploreScreen() {
       headerTitle: userCity ? `Keşfet: ${userCity}` : 'Keşfet',
     });
   }, [navigation, userCity]);
+
+  // Effect to fetch current user
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      const currentUserData = await userService.getCurrentUser();
+      setUser(currentUserData);
+    };
+    fetchCurrentUser();
+  }, []);
 
   // Load data when screen is focused or location changes
   useFocusEffect(
@@ -176,19 +188,20 @@ export default function ExploreScreen() {
       console.log('[searchNearbyPlaces] Searching in database first...');
       
       // İlk önce veritabanında ara
-      const dbPlaces = await placesService.getNearbyPlaces(
+      const dbPlacesResult = await placesService.getNearbyPlaces(
         location.latitude,
         location.longitude,
         2000 // Başlangıç yarıçapı
       );
 
-      if (dbPlaces && dbPlaces.length >= 5) {
-        console.log(`[searchNearbyPlaces] Found ${dbPlaces.length} places in database`);
-        setPlaces(dbPlaces.map(place => ({
-          id: place.id,
+      if (dbPlacesResult && dbPlacesResult.length >= 5) {
+        console.log(`[searchNearbyPlaces] Found ${dbPlacesResult.length} places in database`);
+        let mappedDbPlaces = dbPlacesResult.map(place => ({
+          id: place.id, // This is our internal place_id, not google_place_id
           name: place.name,
           vicinity: place.description || '',
           rating: place.rating,
+          // Ensure photo_reference is correctly structured for PlaceCard
           photos: [{ photo_reference: place.image_url || 'https://images.unsplash.com/photo-1518982217067-65d51c4f4fdf?q=80&w=400' }],
           geometry: {
             location: {
@@ -196,8 +209,23 @@ export default function ExploreScreen() {
               lng: place.longitude
             }
           },
-          types: [place.type]
-        })));
+          types: [place.type],
+          // google_place_id: place.google_place_id, // Keep this if dbPlaces store it and it's needed for isPlaceFavorite
+        }));
+
+        if (user && user.id) {
+          const placesWithFavStatus = await Promise.all(
+            mappedDbPlaces.map(async (p) => ({
+              ...p,
+              // Assuming p.id from db is what we use for place_id in user_favorite_places
+              // If Google Place ID is stored and preferred, use p.google_place_id
+              isFavorite: await placesService.isPlaceFavorite(user.id, p.id, undefined),
+            }))
+          );
+          setPlaces(placesWithFavStatus);
+        } else {
+          setPlaces(mappedDbPlaces.map(p => ({ ...p, isFavorite: false })));
+        }
         return;
       }
 
@@ -235,7 +263,20 @@ export default function ExploreScreen() {
         return;
       }
 
-      setPlaces(foundPlaces);
+      // Process foundPlaces from Google
+      if (user && user.id && foundPlaces.length > 0) {
+        const placesWithFavStatus = await Promise.all(
+          foundPlaces.map(async (p) => ({
+            ...p,
+            isFavorite: await placesService.isPlaceFavorite(user.id, undefined, p.id), // p.id is google_place_id here
+          }))
+        );
+        setPlaces(placesWithFavStatus);
+      } else if (foundPlaces.length > 0) {
+        setPlaces(foundPlaces.map(p => ({ ...p, isFavorite: false })));
+      } else {
+        setPlaces([]); // Handles case where no places are found
+      }
 
     } catch (error) {
       console.error('[searchNearbyPlaces] Error:', error);
@@ -334,9 +375,73 @@ export default function ExploreScreen() {
               </View>
               <TouchableOpacity 
                 style={styles.favoriteButton}
-                onPress={() => {/* TODO: Implement favorite */}}
+                onPress={async () => {
+                  if (!user || !user.id) {
+                    // Alert.alert("Giriş Yapın", "Favorilere eklemek için giriş yapmalısınız.");
+                    // For now, let's assume this action is disabled or handled elsewhere if no user
+                    // Or, if PlaceCard is only rendered when user is known, this check might be redundant here
+                    // but good for safety.
+                    router.push('/login'); // Redirect to login
+                    return;
+                  }
+                  const currentItem = place; // place already has isFavorite through props
+                  const isCurrentlyFavorite = currentItem.isFavorite;
+
+                  // Optimistic update in ExploreScreen's places state
+                  setPlaces(currentPlaces =>
+                    currentPlaces.map(p =>
+                      p.id === currentItem.id ? { ...p, isFavorite: !isCurrentlyFavorite } : p
+                    )
+                  );
+
+                  try {
+                    if (isCurrentlyFavorite) {
+                      // If place.id is a google_place_id, use undefined for our internal place_id
+                      // If place.id is our internal ID (from db fetch), use that for place_id
+                      // Assuming places from Google have their google_place_id as place.id
+                      // And places from DB also use their specific ID (which might be a UUID or google_place_id)
+                      // For simplicity here, assuming place.id from NearbyPlace is always treated as google_place_id by the service if place_id is undefined.
+                      // The service logic in previous steps was: isPlaceFavorite(userId, p.id, undefined) for DB, isPlaceFavorite(userId, undefined, p.id) for Google
+                      // So, removeFavoritePlace should mirror this.
+                      // If place.id is from our DB (and not a google_place_id), then it should be (user.id, place.id, undefined)
+                      // If place.id is from Google, then it should be (user.id, undefined, place.id)
+                      // Let's assume `place.isFromDB` flag or check `place.id` format if needed, or rely on service to handle.
+                      // For now, let's assume all `place.id` here are Google Place IDs or are handled by service.
+                      await placesService.removeFavoritePlace(user.id, undefined, currentItem.id);
+                    } else {
+                      const cityForFavorite = userCity || 'Unknown City';
+                      const imageUrl = currentItem.photos?.[0]?.photo_reference
+                        ? currentItem.photos[0].photo_reference.startsWith('http')
+                          ? currentItem.photos[0].photo_reference
+                          : `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1200&photoreference=${currentItem.photos[0].photo_reference}&key=${GOOGLE_API_KEY}`
+                        : undefined;
+
+                      await placesService.addFavoritePlace(user.id, {
+                        google_place_id: currentItem.id,
+                        name: currentItem.name,
+                        image_url: imageUrl,
+                        type: currentItem.types?.[0],
+                        city: cityForFavorite,
+                      });
+                    }
+                  } catch (err) {
+                    console.error("Error updating favorite status in PlaceCard:", err);
+                    // Revert optimistic update
+                    setPlaces(currentPlaces =>
+                      currentPlaces.map(p =>
+                        p.id === currentItem.id ? { ...p, isFavorite: isCurrentlyFavorite } : p
+                      )
+                    );
+                    // Alert.alert("Hata", "Favori durumu güncellenirken bir sorun oluştu.");
+                  }
+                }}
               >
-                <FontAwesome5 name="heart" size={22} color={THEME.COLORS.white} />
+                <FontAwesome5
+                  name="heart"
+                  size={22}
+                  solid={place.isFavorite}
+                  color={place.isFavorite ? THEME.COLORS.warning : THEME.COLORS.white}
+                />
               </TouchableOpacity>
             </View>
             
