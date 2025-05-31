@@ -138,7 +138,7 @@ export default function ChallengesScreen() {
   // Show loading indicator while fetching data
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['right', 'left']}>
         <StatusBar style="auto" />
         {/* Header is now managed by navigation options */}
         <View style={styles.loadingContainer}>
@@ -152,7 +152,7 @@ export default function ChallengesScreen() {
   // Show error if there's an issue fetching data
   if (error) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['right', 'left']}>
         <StatusBar style="auto" />
         {/* Header is now managed by navigation options */}
         <View style={styles.errorContainer}>
@@ -167,7 +167,7 @@ export default function ChallengesScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['right', 'left']}>
       <StatusBar style="auto" />
       {/* Header is now managed by navigation options, remove local header */}
       {/* Categories */}
