@@ -816,7 +816,7 @@ export default function ProfileScreen() {
 
   if (!user || loading) {
     return (
-      <SafeAreaView style={styles.loadingContainer} edges={['right', 'left']}>
+      <SafeAreaView style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={THEME.COLORS.primary} />
       </SafeAreaView>
     );
@@ -824,7 +824,7 @@ export default function ProfileScreen() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaView style={styles.container} edges={['right', 'left']}>
+      <SafeAreaView style={styles.container}>
         <StatusBar style="auto" />
 
         <View style={styles.header}>
@@ -920,7 +920,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     paddingVertical: 12,
     backgroundColor: THEME.COLORS.card,
-    paddingTop: 10,
   },
   userInfoContainer: {
     flexDirection: 'row',
