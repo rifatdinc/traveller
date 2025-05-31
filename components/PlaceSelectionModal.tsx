@@ -16,13 +16,34 @@ import { supabase } from '@/lib/supabase';
 import { debounce } from 'lodash';
 import * as Location from 'expo-location';
 
-export function PlaceSelectionModal({ visible, onClose, onSelectPlace }) {
+interface Place {
+  id: string;
+  name: string;
+  type: string;
+  city: string;
+  latitude: number;
+  longitude: number;
+  image_url?: string;
+}
+
+interface PlaceSelectionModalProps {
+  visible: boolean;
+  onClose: () => void;
+  onSelectPlace: (place: Place) => void;
+}
+
+interface Coordinates {
+  latitude: number;
+  longitude: number;
+}
+
+export default function PlaceSelectionModal({ visible, onClose, onSelectPlace }: PlaceSelectionModalProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [places, setPlaces] = useState([]);
+  const [places, setPlaces] = useState<Place[]>([]);
   const [loading, setLoading] = useState(false);
   const [nearbyLoading, setNearbyLoading] = useState(false);
-  const [nearbyPlaces, setNearbyPlaces] = useState([]);
-  const [userLocation, setUserLocation] = useState(null);
+  const [nearbyPlaces, setNearbyPlaces] = useState<Place[]>([]);
+  const [userLocation, setUserLocation] = useState<Coordinates | null>(null);
 
   useEffect(() => {
     if (visible) {
@@ -95,7 +116,7 @@ export function PlaceSelectionModal({ visible, onClose, onSelectPlace }) {
   }, 500);
 
   // Handle search input change
-  const handleSearchChange = (text) => {
+  const handleSearchChange = (text: string) => {
     setSearchTerm(text);
     if (text.length >= 2) {
       setLoading(true);
@@ -106,7 +127,7 @@ export function PlaceSelectionModal({ visible, onClose, onSelectPlace }) {
   };
 
   // Calculate distance between two coordinates
-  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): string => {
     const R = 6371; // Earth's radius in km
     const dLat = deg2rad(lat2 - lat1);
     const dLon = deg2rad(lon2 - lon1);
@@ -119,13 +140,13 @@ export function PlaceSelectionModal({ visible, onClose, onSelectPlace }) {
     return distance.toFixed(1);
   };
 
-  const deg2rad = (deg) => {
+  const deg2rad = (deg: number): number => {
     return deg * (Math.PI / 180);
   };
 
   // Render each place item
-  const renderPlaceItem = ({ item }) => {
-    const distance = userLocation
+  const renderPlaceItem = ({ item }: { item: Place }) => {
+    const distance = userLocation && 'latitude' in item
       ? calculateDistance(
           userLocation.latitude,
           userLocation.longitude,
@@ -199,13 +220,9 @@ export function PlaceSelectionModal({ visible, onClose, onSelectPlace }) {
               renderItem={renderPlaceItem}
               keyExtractor={item => item.id}
               ListHeaderComponent={
-                places.length === 0 && (
-                  <View style={styles.sectionHeader}>
-                    <ThemedText type="subtitle">
-                      {nearbyLoading ? 'Yakınlardaki yerler bulunuyor...' : 'Yakınlardaki Yerler'}
-                    </ThemedText>
-                  </View>
-                )
+                places.length === 0 && nearbyPlaces.length > 0 ? (
+                  <ThemedText style={styles.sectionTitle}>Yakındaki Yerler</ThemedText>
+                ) : null
               }
               ListEmptyComponent={
                 nearbyLoading ? (
@@ -233,8 +250,7 @@ export function PlaceSelectionModal({ visible, onClose, onSelectPlace }) {
   );
 }
 
-// Default export ekle
-export default PlaceSelectionModal;
+
 
 const styles = StyleSheet.create({
   modalContainer: {
@@ -338,5 +354,14 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
     color: THEME.COLORS.gray,
+  },
+  sectionTitle: {
+    fontSize: THEME.SIZES.medium,
+    fontWeight: 'bold',
+    color: THEME.COLORS.text,
+    padding: 15,
+    backgroundColor: THEME.COLORS.background,
+    borderBottomWidth: 1,
+    borderBottomColor: THEME.COLORS.border,
   },
 });

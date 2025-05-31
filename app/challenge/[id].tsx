@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, View, ScrollView, Image, TouchableOpacity, ActivityIndicator, Dimensions, Alert, Share, Platform } from 'react-native';
+import { StyleSheet, View, ScrollView, Image, TouchableOpacity, ActivityIndicator, Dimensions, Alert, Share, Platform, RefreshControl } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -184,7 +184,17 @@ export default function ChallengeDetailScreen() {
     <View style={styles.container}>
       <Stack.Screen options={{ title: challenge.title, headerShadowVisible: false, headerStyle: styles.headerStyle }} />
       <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent} refreshControl={ <RefreshControl refreshing={refreshing} onRefresh={fetchChallengeDetails} tintColor={Colors[theme].primary} colors={[Colors[theme].primary]} /> }>
+      <ScrollView 
+        showsVerticalScrollIndicator={false} 
+        contentContainerStyle={styles.scrollContent} 
+        refreshControl={
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={fetchChallengeDetails} 
+            tintColor={Colors[theme].primary} 
+            colors={[Colors[theme].primary]} 
+          />
+        }>
         <Image source={{ uri: challenge.image_url || challenge.image || 'https://images.unsplash.com/photo-1466781783364-36c955e42a7f' }} style={styles.heroImage} contentFit="cover"/>
         <View style={styles.badgeContainer}>
           <View style={styles.typeBadge}><ThemedText style={styles.typeBadgeText}>{challenge.category ? challenge.category.charAt(0).toUpperCase() + challenge.category.slice(1) : getChallengeType(challenge)}</ThemedText></View>
@@ -214,7 +224,12 @@ export default function ChallengeDetailScreen() {
           <ThemedView lightColor={Colors.light.card} darkColor={Colors.dark.card} style={styles.participationContainer}>
             <ThemedText style={styles.sectionTitle}>Katılım Durumu</ThemedText>
             <View style={styles.statusContainer}>
-              <FontAwesome5 name={hasJoined ? "check-circle" : "info-circle"} size={20} color={hasJoined ? THEME.COLORS.success : THEME.COLORS.info} solid={hasJoined}/>
+              <FontAwesome5 
+                name={hasJoined ? "check-circle" : "info-circle"} 
+                size={20} 
+                color={hasJoined ? THEME.COLORS.success : Colors[theme].primary} 
+                solid={hasJoined}
+              />
               <ThemedText style={styles.statusText}>{hasJoined ? 'Bu göreve katıldınız! Görevi tamamlamak için gereklilikleri yerine getirin.' : 'Bu göreve henüz katılmadınız. Göreve katılmak için aşağıdaki butona tıklayın.'}</ThemedText>
             </View>
           </ThemedView>

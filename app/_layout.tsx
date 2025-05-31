@@ -67,8 +67,8 @@ export default function RootLayout() {
           />
         </Stack>
         <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-        <Toast />
       </ThemeProvider>
+      <Toast />
     </AuthProvider>
   );
 }

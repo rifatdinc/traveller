@@ -6,12 +6,19 @@ export const THEME = {
     info: '#5AC8FA',
     warning: '#FF9500',
     danger: '#FF3B30',
-    error: '#FF3B30', // Hata mesajları için kırmızı renk ekledim
-    light: '#F8F9FA', // This 'light' is a general light color, not theme-specific text/bg
-    dark: '#212529',  // This 'dark' is a general dark color, not theme-specific text/bg
+    error: '#FF3B30',
+    light: '#F8F9FA',
+    dark: '#212529',
     gray: '#6C757D',
-    white: '#FFFFFF', // Added for visit status UI
+    white: '#FFFFFF',
     notification: '#FF3B30',
+    primary: '#007AFF',
+    secondary: '#5856D6',
+    text: '#000000',
+    background: '#FFFFFF',
+    card: '#FFFFFF',
+    border: '#E5E5EA',
+    shadowColor: '#000',
     // Removed: primary, secondary, accent, background, card, text, border, shadowColor, textLight
     // These are now in constants/Colors.ts for light/dark mode variants
   },

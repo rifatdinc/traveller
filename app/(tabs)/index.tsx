@@ -6,6 +6,7 @@ import { router } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
+import Toast from 'react-native-toast-message';
 
 import { ThemedText, ThemedTextProps } from '@/components/ThemedText';
 import { ThemedView, ThemedViewProps } from '@/components/ThemedView';
@@ -388,9 +389,7 @@ export default function HomeScreen() {
         <View>
           <ThemedText style={styles.greeting}>Merhaba, {user?.username || 'Gezgin'}</ThemedText>
           <View style={styles.pointsContainer}>
-            <ThemedText style={{ color: Colors[theme].accent }}>
-              <FontAwesome5 name="star" size={16} />
-            </ThemedText>
+            <FontAwesome5 name="star" size={16} color={Colors[theme].accent} />
             <ThemedText style={[styles.pointsText, { color: Colors[theme].accent }]}>{user?.total_points || 0} Puan</ThemedText>
           </View>
         </View>
@@ -438,9 +437,7 @@ export default function HomeScreen() {
                 <ThemedText style={[styles.featuredDescription, {color: Colors.dark.text /* Static light text for high contrast on overlay */}]}>{dailyChallenge.description}</ThemedText>
                 <View style={styles.featuredFooter}>
                   <View style={styles.featuredPoints}>
-                    <ThemedText style={{ color: Colors[theme].accent }}>
-                      <FontAwesome5 name="star" size={16} />
-                    </ThemedText>
+                    <FontAwesome5 name="star" size={16} color={Colors[theme].accent} />
                     <ThemedText style={[styles.featuredPointsText, {color: Colors.dark.text /* Static light text for high contrast on overlay */}]}>{dailyChallenge.points} Puan</ThemedText>
                   </View>
                   <TouchableOpacity 
@@ -484,6 +481,8 @@ export default function HomeScreen() {
               keyExtractor={(item) => item.id} 
               contentContainerStyle={styles.flatListContent}
               renderItem={({ item }) => {
+                if (!item || typeof item !== 'object') return null;
+                
                 const isFavorite = favoritePlaceIds.includes(item.id);
                 const isLoadingFavorite = favoriteLoading[item.id];
                 const photoUrl = item.photo_url || item.image_url || (item.photos && item.photos.length > 0 ? getPlacePhoto(item.photos[0].photo_reference) : 'https://via.placeholder.com/400x200?text=No+Image');
@@ -493,9 +492,14 @@ export default function HomeScreen() {
                     style={[styles.placeCard, { backgroundColor: Colors[theme].card, shadowColor: Colors[theme].shadowColor }]}
                     activeOpacity={0.8}
                     onPress={() => {
+                      const message = [
+                        item.address || item.description || '',
+                        item.rating ? `Puan: ${item.rating}/5` : ''
+                      ].filter(Boolean).join('\n');
+                      
                       Alert.alert(
-                        item.name,
-                        `${item.address || item.description}${item.rating ? `\nPuan: ${item.rating}/5` : ''}`,
+                        item.name || 'Mekan',
+                        message,
                         [
                           { text: 'Kapat', style: 'cancel' },
                           { text: 'Keşfet', onPress: () => router.push({pathname: '/(tabs)/explore', params: { placeId: item.id }}) }
@@ -510,20 +514,22 @@ export default function HomeScreen() {
                         <ThemedText style={styles.placeName} numberOfLines={2}>{item.name}</ThemedText>
                         <View style={styles.placeDetails}>
                           <View style={styles.placeType}>
-                            <FontAwesome5 
+<FontAwesome5 
                               name={
                                 item.category === 'museum' || item.type === 'müze' ? 'university' :
                                 item.category === 'park' || item.type === 'park' ? 'tree' :
                                 item.category === 'restaurant' || item.type === 'restoran' ? 'utensils' :
                                 'landmark'
                               } 
-                              size={12} color={Colors.dark.text /* Static light text for overlay */} />
-                            <ThemedText style={[styles.placeTypeText, {color: Colors.dark.text /* Static light for overlay*/}]}>{item.type || item.category?.replace(/_/g, ' ')}</ThemedText>
+                              size={12} 
+                              color={Colors.dark.text}
+                            />
+                            <ThemedText style={[styles.placeTypeText, {color: Colors.dark.text}]}>{item.type || item.category?.replace(/_/g, ' ')}</ThemedText>
                           </View>
                           {item.rating && (
                             <View style={styles.placeRating}>
                               <FontAwesome5 name="star" size={12} color={Colors[theme].accent} />
-                              <ThemedText style={[styles.placeRatingText, {color: Colors.dark.text /* Static light for overlay*/}]}>{item.rating.toFixed(1)}</ThemedText>
+                              <ThemedText style={[styles.placeRatingText, {color: Colors.dark.text}]}>{item.rating.toFixed(1)}</ThemedText>
                             </View>
                           )}
                         </View>
@@ -572,12 +578,19 @@ export default function HomeScreen() {
                         <ThemedText style={styles.placeName} numberOfLines={2}>{item.name}</ThemedText>
                         <View style={styles.placeDetails}>
                           <View style={styles.placeType}>
-                            <FontAwesome5 name={item.type === 'Tarihi Yer' ? 'landmark' : item.type === 'Doğa Rotası' ? 'mountain' : 'store'} size={12} color={Colors.dark.text /* Static light for overlay */} />
-                            <ThemedText style={[styles.placeTypeText, {color: Colors.dark.text /* Static light for overlay*/}]}>{item.type}</ThemedText>
+<FontAwesome5 
+                              name={
+                                item.type === 'Tarihi Yer' ? 'landmark' : 
+                                item.type === 'Doğa Rotası' ? 'mountain' : 'store'
+                              } 
+                              size={12} 
+                              color={Colors.dark.text}
+                            />
+                            <ThemedText style={[styles.placeTypeText, {color: Colors.dark.text}]}>{item.type}</ThemedText>
                           </View>
                           <View style={styles.placeRating}>
                             <FontAwesome5 name="star" size={12} color={Colors[theme].accent} />
-                            <ThemedText style={[styles.placeRatingText, {color: Colors.dark.text /* Static light for overlay*/}]}>{item.points || item.rating?.toFixed(1) || 'N/A'}</ThemedText>
+                            <ThemedText style={[styles.placeRatingText, {color: Colors.dark.text}]}>{item.points || item.rating?.toFixed(1) || 'N/A'}</ThemedText>
                           </View>
                         </View>
                       </View>
@@ -610,12 +623,12 @@ export default function HomeScreen() {
             >
               <FontAwesome5 name="map-marker-alt" size={24} color={Colors[theme].primary} />
               <ThemedText style={[styles.emptyStateText, {color: Colors[theme].textLight}]}>Henüz yakınınızda keşfedilecek yer bulunamadı.</ThemedText>
-              {!location && <ThemedText style={[styles.emptyStateText, {color: Colors[theme].textLight}]}>Konum izni vererek yakındaki yerleri görebilirsiniz.</ThemedText>}
+              {!location ? <ThemedText style={[styles.emptyStateText, {color: Colors[theme].textLight}]}>Konum izni vererek yakındaki yerleri görebilirsiniz.</ThemedText> : null}
             </ThemedView>
           )}
         </View>
         {/* Toast Message Component (optional, requires setup) */}
-        {/* <Toast /> */}
+        <Toast />
         {/* Popular Challenges */}
         <View style={styles.sectionContainer}>
           <View style={styles.sectionHeader}>
@@ -633,8 +646,11 @@ export default function HomeScreen() {
               keyExtractor={(item) => item.id}
               contentContainerStyle={styles.flatListContent}
               renderItem={({ item }) => {
+                if (!item || typeof item !== 'object') return null;
+                
                 const isBookmarked = bookmarkedChallengeIds.includes(item.id);
                 const isLoadingBookmark = bookmarkLoading[item.id];
+                
                 return (
                   <TouchableOpacity 
                     style={[styles.placeCard, { backgroundColor: Colors[theme].card, shadowColor: Colors[theme].shadowColor }]}
@@ -672,7 +688,7 @@ export default function HomeScreen() {
                           </View>
                           <View style={styles.placeRating}> {/* Assuming points can be displayed like rating */}
                             <FontAwesome5 name="star" size={12} color={Colors[theme].accent} />
-                            <ThemedText style={[styles.placeRatingText, { color: Colors.dark.text }]}>{item.points}</ThemedText>
+                            <ThemedText style={[styles.placeRatingText, { color: Colors.dark.text }]}>{String(item.points || 0)}</ThemedText>
                           </View>
                         </View>
                       </View>
@@ -766,8 +782,8 @@ export default function HomeScreen() {
                     <ThemedText style={styles.storyUsername}>{post.user?.username || 'Gezgin'}</ThemedText>
                     {post.location && (
                       <View style={styles.storyPlace}>
-                        <FontAwesome5 name="map-marker-alt" size={12} color={THEME.COLORS.primary} />
-                        <ThemedText style={styles.storyPlaceText}>{post.location}</ThemedText>
+                        <FontAwesome5 name="map-marker-alt" size={12} color={Colors[theme].primary} />
+                        <ThemedText style={styles.storyPlaceText}>{post.location || ''}</ThemedText>
                       </View>
                     )}
                   </View>
@@ -791,22 +807,22 @@ export default function HomeScreen() {
 
                 <View style={styles.storyActions}>
                   <TouchableOpacity style={styles.storyAction}>
-                    <FontAwesome5 name="heart" size={16} color={THEME.COLORS.gray} />
+                    <FontAwesome5 name="heart" size={16} color={Colors[theme].textLight} />
                     <ThemedText style={styles.storyActionText}>{post.likes_count || 0}</ThemedText>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.storyAction}>
-                    <FontAwesome5 name="comment" size={16} color={THEME.COLORS.gray} />
+                    <FontAwesome5 name="comment" size={16} color={Colors[theme].textLight} />
                     <ThemedText style={styles.storyActionText}>{post.comments_count || 0}</ThemedText>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.storyAction}>
-                    <FontAwesome5 name="share" size={16} color={THEME.COLORS.gray} />
+                    <FontAwesome5 name="share" size={16} color={Colors[theme].textLight} />
                   </TouchableOpacity>
                 </View>
               </ThemedView>
             ))
           ) : (
             <ThemedView style={styles.emptyStateContainer}>
-              <FontAwesome5 name="book-open" size={24} color={THEME.COLORS.primary} />
+              <FontAwesome5 name="book-open" size={24} color={Colors[theme].primary} />
               <ThemedText style={styles.emptyStateText}>Henüz hikaye paylaşılmamış</ThemedText>
             </ThemedView>
           )}
@@ -817,8 +833,6 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
   container: { // Base container, flex:1 is key. Background set dynamically.
     flex: 1,
   },

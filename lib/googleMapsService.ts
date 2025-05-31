@@ -2,8 +2,7 @@ import axios from 'axios';
 import * as Location from 'expo-location';
 import { supabase } from '@/lib/supabase';
 import { decode } from 'base64-arraybuffer';
-import { GOOGLE_API_KEY } from '@env';
-
+const GOOGLE_API_KEY ="AIzaSyCXyczc8T58aJ7Mxn71zOzErkpGCHv2vD0"
 // Type tanımlamaları
 export interface LocationCoords {
   latitude: number;
