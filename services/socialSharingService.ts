@@ -6,7 +6,7 @@ import { Platform } from 'react-native';
 
 export interface SocialPost {
   id: string;
-  user_id: string;
+  auth_id: string;
   place_id: string;
   content: string;
   images?: string[];
@@ -105,11 +105,7 @@ export const socialSharingService = {
       // Get posts with user and place information
       const { data, error } = await supabase
         .from('social_posts')
-        .select(`
-          *,
-          users:user_id(username, avatar),
-          places:place_id(name, city)
-        `)
+        .select('*')
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1);
 
@@ -121,7 +117,7 @@ export const socialSharingService = {
       // Format the data
       return data.map(post => ({
         id: post.id,
-        user_id: post.user_id,
+        auth_id: post.auth_id,
         place_id: post.place_id,
         content: post.content,
         images: post.images,
@@ -129,7 +125,7 @@ export const socialSharingService = {
         comments_count: post.comments_count,
         created_at: post.created_at,
         username: post.users?.username,
-        user_avatar: post.users?.avatar,
+        user_avatar: post.users?.avatar_url,
         place_name: post.places?.name,
         place_city: post.places?.city
       }));

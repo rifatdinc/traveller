@@ -114,19 +114,29 @@ export interface UserChallengeRequirementProgress {
   completion_date?: string;
 }
 
-export interface FeedPost {
+export interface SocialPost {
   id: string;
   user_id: string;
-  title?: string;
+  place_id: string;
   content: string;
-  image_url?: string;
-  location?: string;
-  place_id?: string;
+  images?: string[];
   likes_count: number;
   comments_count: number;
   created_at: string;
-  user?: User;
-  isLiked?: boolean; // Added for UI state
+  username?: string;
+  user_avatar?: string;
+  place_name?: string;
+  place_city?: string;
+  isLiked?: boolean;
+  location?: string;
+  image_url?: string;
+  user?: {
+    id: string;
+    username: string;
+    avatar_url: string;
+    level: string;
+    total_points: number;
+  }
 }
 
 export interface Plan {

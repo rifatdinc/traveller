@@ -15,12 +15,11 @@ import { socialSharingService } from '@/services/socialSharingService'; // Added
 import { challengesService } from '@/services/challengesService';
 import { placesService } from '@/services/placesService';
 import { userService } from '@/services/userService';
-import { User, Place, Challenge, FeedPost } from '@/types';
+import { User, Place, Challenge, SocialPost } from '@/types';
 import { locationChallengeService } from '@/services/locationChallengeService';
 import { 
   getCurrentLocation,
   searchNearbyPlaces, 
-  getPlacePhoto,
   NearbyPlace,
   // createPlaceFromGoogleData, // Commented out as it's not used directly in the new flow for challenges
   getPlacePhoto, // Keep if used for nearby places display
@@ -39,7 +38,7 @@ export default function HomeScreen() {
   // const [location, setLocation] = useState<{latitude: number; longitude: number} | null>(null); // Removed
   const [dailyChallenge, setDailyChallenge] = useState<Challenge | null>(null);
   const [challenges, setChallenges] = useState<Challenge[]>([]); // General + Location-based challenges
-  const [feedPosts, setFeedPosts] = useState<FeedPost[]>([]);
+  const [feedPosts, setFeedPosts] = useState<SocialPost[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [mockChallengeUsed, setMockChallengeUsed] = useState<boolean>(false);
@@ -164,6 +163,7 @@ export default function HomeScreen() {
               const isLiked = await socialSharingService.hasUserLikedPost(user.id, post.id);
               return {
                 id: post.id,
+                user_id: post.user_id,
                 user: {
                   id: post.user_id,
                   username: post.username || 'Anonim',
@@ -187,12 +187,13 @@ export default function HomeScreen() {
           // If user is not logged in, set posts without liked status
           const transformedFeedPosts = socialFeedPostsData.map(post => ({
             id: post.id,
+            user_id: post.user_id,
             user: {
               id: post.user_id,
-              username: post.username || 'Anonim',
-              avatar_url: post.user_avatar || 'https://randomuser.me/api/portraits/men/1.jpg',
+              username: post.username || '',
+              avatar_url: post.user_avatar || '',
               level: '',
-              total_points: 0,
+              total_points: 0
             },
             location: post.place_name || post.place_city || undefined,
             created_at: post.created_at,

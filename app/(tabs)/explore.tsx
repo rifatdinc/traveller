@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useLayoutEffect } from 'react'; // Added useLayoutEffect
+import React, { useState, useCallback, useRef, useLayoutEffect, useEffect } from 'react'; // Added useLayoutEffect
 import {
   View,
   StyleSheet,
@@ -22,7 +22,7 @@ import { THEME } from '@/constants/Theme';
 import { router, useNavigation } from 'expo-router'; // Added useNavigation
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { searchNearbyPlaces as searchNearbyPlacesGoogle, LocationCoords, NearbyPlace, GOOGLE_API_KEY, createPlaceFromGoogleData } from '@/lib/googleMapsService'; // Renamed and added createPlaceFromGoogleData
+import { searchNearbyPlaces , LocationCoords, NearbyPlace, GOOGLE_API_KEY } from '@/lib/googleMapsService'; // Renamed and added createPlaceFromGoogleData
 import { useLocation } from '@/contexts/LocationContext'; // Added
 import { Place } from '@/types';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
